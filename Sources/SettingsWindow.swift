@@ -80,9 +80,9 @@ private final class MappingActionHandler: NSObject {
     }
 
     @objc func dropdownChanged(_ sender: NSPopUpButton) {
-        let idx = sender.indexOfSelectedItem
-        guard idx > 0, let profileIdx = profileIndex() else { return }
-        let keyCode = allKeys[idx - 1].keyCode
+        guard let item = sender.selectedItem,
+              let keyCode = (item.representedObject as? NSNumber)?.uint16Value,
+              let profileIdx = profileIndex() else { return }
         controller?.appConfig.profiles[profileIdx].setKeyCode(keyCode, for: button)
         captureBtn?.keyCode = keyCode
         captureBtn?.updateTitle()
@@ -99,11 +99,29 @@ private final class MappingActionHandler: NSObject {
 
 // MARK: - Settings Window Controller
 
-final class SettingsWindowController: NSWindowController {
+final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
     var appConfig: AppConfig
     var onSave: ((AppConfig) -> Void)?
     private var tabView: NSTabView!
     private var switchPopup: NSPopUpButton!
+    private var builtTabs: Set<UUID> = []
+    private lazy var sharedKeyMenu: NSMenu = {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "— Select key —", action: nil, keyEquivalent: "")
+        for section in keySections {
+            menu.addItem(.separator())
+            let header = NSMenuItem(title: section.title, action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            header.attributedTitle = NSAttributedString(string: section.title, attributes: [.font: NSFont.boldSystemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])
+            menu.addItem(header)
+            for key in section.keys {
+                let item = NSMenuItem(title: key.name, action: nil, keyEquivalent: "")
+                item.representedObject = key.keyCode as NSNumber
+                menu.addItem(item)
+            }
+        }
+        return menu
+    }()
 
     init(appConfig: AppConfig) {
         self.appConfig = appConfig
@@ -166,6 +184,7 @@ final class SettingsWindowController: NSWindowController {
         // Tab view
         let tabHeight = totalHeight - y - 10
         tabView = NSTabView(frame: NSRect(x: 10, y: y, width: width - 20, height: tabHeight))
+        tabView.delegate = self
         contentView.addSubview(tabView)
 
         for index in appConfig.profiles.indices {
@@ -176,6 +195,17 @@ final class SettingsWindowController: NSWindowController {
         }
 
         window.contentView = contentView
+    }
+
+    private func selectDropdownItem(_ dropdown: NSPopUpButton, for keyCode: UInt16) {
+        guard let menu = dropdown.menu else { return }
+        for (i, item) in menu.items.enumerated() {
+            if (item.representedObject as? NSNumber)?.uint16Value == keyCode {
+                dropdown.selectItem(at: i)
+                return
+            }
+        }
+        dropdown.selectItem(at: 0)
     }
 
     private func addSeparator(to view: NSView, at y: CGFloat, width: CGFloat) {
@@ -189,8 +219,20 @@ final class SettingsWindowController: NSWindowController {
         let profile = appConfig.profiles[profileIndex]
         let item = NSTabViewItem(identifier: profile.id)
         item.label = "\(profile.color.emoji) Profile \(profileIndex + 1)"
-        item.view = buildMappingView(for: profile.id)
+        item.view = NSView() // placeholder, built lazily on select
         tabView.addTabViewItem(item)
+    }
+
+    private func ensureTabBuilt(_ item: NSTabViewItem) {
+        guard let profileId = item.identifier as? UUID, !builtTabs.contains(profileId) else { return }
+        builtTabs.insert(profileId)
+        item.view = buildMappingView(for: profileId)
+    }
+
+    // MARK: - NSTabViewDelegate
+
+    func tabView(_ tabView: NSTabView, willSelect tabViewItem: NSTabViewItem?) {
+        if let item = tabViewItem { ensureTabBuilt(item) }
     }
 
     private func buildMappingView(for profileId: UUID) -> NSView {
@@ -243,10 +285,9 @@ final class SettingsWindowController: NSWindowController {
             view.addSubview(captureBtn)
 
             let dropdown = NSPopUpButton(frame: NSRect(x: 186, y: y, width: 200, height: 26), pullsDown: false)
-            dropdown.addItem(withTitle: "— Select key —")
-            for key in allKeys { dropdown.addItem(withTitle: key.name) }
-            if let kc = captureBtn.keyCode, let match = allKeys.firstIndex(where: { $0.keyCode == kc }) {
-                dropdown.selectItem(at: match + 1)
+            dropdown.menu = sharedKeyMenu.copy() as? NSMenu
+            if let kc = captureBtn.keyCode {
+                selectDropdownItem(dropdown, for: kc)
             }
             view.addSubview(dropdown)
 
@@ -258,16 +299,12 @@ final class SettingsWindowController: NSWindowController {
             // Single handler for dropdown + clear + record sync
             let handler = MappingActionHandler(profileId: profileId, button: button, captureBtn: captureBtn, dropdown: dropdown, controller: self)
 
-            captureBtn.onCapture = { [weak handler, weak dropdown] keyCode in
+            captureBtn.onCapture = { [weak self, weak handler, weak dropdown] keyCode in
                 guard let handler else { return }
                 if let idx = handler.profileIndex() {
                     handler.controller?.appConfig.profiles[idx].setKeyCode(keyCode, for: button)
                 }
-                if let match = allKeys.firstIndex(where: { $0.keyCode == keyCode }) {
-                    dropdown?.selectItem(at: match + 1)
-                } else {
-                    dropdown?.selectItem(at: 0)
-                }
+                if let dropdown { self?.selectDropdownItem(dropdown, for: keyCode) }
             }
 
             dropdown.target = handler
@@ -350,6 +387,7 @@ final class SettingsWindowController: NSWindowController {
         while tabView.numberOfTabViewItems > 0 {
             tabView.removeTabViewItem(tabView.tabViewItems[0])
         }
+        builtTabs.removeAll()
         for index in appConfig.profiles.indices {
             addTab(for: index)
         }
