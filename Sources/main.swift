@@ -274,8 +274,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async {
             self.lastInputItem.title = "Last input: \(button.rawValue) \(pressed ? "↓" : "↑")"
         }
-        guard isEnabled, let keyCode = appConfig.activeProfile.keyCode(for: button) else { return }
-        postKeyEvent(keyCode: keyCode, keyDown: pressed)
+        guard isEnabled, let action = appConfig.activeProfile.action(for: button) else { return }
+        switch action {
+        case .singleKey(let keyCode):
+            postKeyEvent(keyCode: keyCode, keyDown: pressed)
+        case .macro(let steps):
+            guard pressed else { return }
+            executeMacro(steps)
+        }
+    }
+
+    // MARK: - Macro Execution
+
+    private static let macroQueue = DispatchQueue(label: "com.xboxaskeyboard.macro")
+    private static let stepDelay: UInt32 = 50_000 // 50ms in microseconds
+
+    private func executeMacro(_ steps: [MacroStep]) {
+        Self.macroQueue.async { [weak self] in
+            for step in steps {
+                guard let self else { return }
+                switch step.type {
+                case .keyCombo:
+                    self.executeKeyComboStep(step)
+                case .typeText:
+                    if let text = step.text { self.executeTypeText(text) }
+                }
+                usleep(Self.stepDelay)
+            }
+        }
+    }
+
+    private func executeKeyComboStep(_ step: MacroStep) {
+        guard let keyCode = step.keyCode else { return }
+        var flags: CGEventFlags = []
+        for mod in step.modifiers {
+            switch mod {
+            case "cmd": flags.insert(.maskCommand)
+            case "shift": flags.insert(.maskShift)
+            case "opt": flags.insert(.maskAlternate)
+            case "ctrl": flags.insert(.maskControl)
+            default: break
+            }
+        }
+        // Key down
+        if let event = CGEvent(keyboardEventSource: eventSource, virtualKey: CGKeyCode(keyCode), keyDown: true) {
+            event.flags = flags.union(KeyCodeNames.eventFlags(for: keyCode))
+            event.post(tap: .cghidEventTap)
+        }
+        usleep(10_000) // 10ms between down and up
+        // Key up
+        if let event = CGEvent(keyboardEventSource: eventSource, virtualKey: CGKeyCode(keyCode), keyDown: false) {
+            event.flags = flags.union(KeyCodeNames.eventFlags(for: keyCode))
+            event.post(tap: .cghidEventTap)
+        }
+    }
+
+    private func executeTypeText(_ text: String) {
+        for char in text {
+            var utf16 = Array(String(char).utf16)
+            guard let downEvent = CGEvent(keyboardEventSource: eventSource, virtualKey: 0, keyDown: true) else { continue }
+            downEvent.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
+            downEvent.post(tap: .cghidEventTap)
+
+            if let upEvent = CGEvent(keyboardEventSource: eventSource, virtualKey: 0, keyDown: false) {
+                upEvent.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
+                upEvent.post(tap: .cghidEventTap)
+            }
+            usleep(30_000) // 30ms per character
+        }
     }
 
     private func postKeyEvent(keyCode: UInt16, keyDown: Bool) {

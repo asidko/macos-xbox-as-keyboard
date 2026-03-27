@@ -34,7 +34,6 @@ final class KeyCaptureButton: NSButton {
     @objc private func startCapture() {
         isCapturing = true
         title = "Press a key..."
-
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.isCapturing else { return event }
             self.stopCapture()
@@ -56,47 +55,6 @@ final class KeyCaptureButton: NSButton {
     deinit { stopCapture() }
 }
 
-// MARK: - Mapping Action Handler
-
-/// Handles dropdown selection and clear for a single button mapping row.
-/// Uses profile ID (not index) so it survives tab rebuilds.
-private final class MappingActionHandler: NSObject {
-    let profileId: UUID
-    let button: ControllerButton
-    weak var captureBtn: KeyCaptureButton?
-    weak var dropdown: NSPopUpButton?
-    weak var controller: SettingsWindowController?
-
-    init(profileId: UUID, button: ControllerButton, captureBtn: KeyCaptureButton, dropdown: NSPopUpButton, controller: SettingsWindowController) {
-        self.profileId = profileId
-        self.button = button
-        self.captureBtn = captureBtn
-        self.dropdown = dropdown
-        self.controller = controller
-    }
-
-    fileprivate func profileIndex() -> Int? {
-        controller?.appConfig.profiles.firstIndex(where: { $0.id == profileId })
-    }
-
-    @objc func dropdownChanged(_ sender: NSPopUpButton) {
-        guard let item = sender.selectedItem,
-              let keyCode = (item.representedObject as? NSNumber)?.uint16Value,
-              let profileIdx = profileIndex() else { return }
-        controller?.appConfig.profiles[profileIdx].setKeyCode(keyCode, for: button)
-        captureBtn?.keyCode = keyCode
-        captureBtn?.updateTitle()
-    }
-
-    @objc func clear() {
-        guard let profileIdx = profileIndex() else { return }
-        controller?.appConfig.profiles[profileIdx].setKeyCode(nil, for: button)
-        captureBtn?.keyCode = nil
-        captureBtn?.updateTitle()
-        dropdown?.selectItem(at: 0)
-    }
-}
-
 // MARK: - Settings Window Controller
 
 final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
@@ -105,6 +63,7 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
     private var tabView: NSTabView!
     private var switchPopup: NSPopUpButton!
     private var builtTabs: Set<UUID> = []
+
     private lazy var sharedKeyMenu: NSMenu = {
         let menu = NSMenu()
         menu.addItem(withTitle: "— Select key —", action: nil, keyEquivalent: "")
@@ -126,7 +85,7 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
     init(appConfig: AppConfig) {
         self.appConfig = appConfig
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 660),
+            contentRect: NSRect(x: 0, y: 0, width: 540, height: 680),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -145,12 +104,11 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
     private func buildUI() {
         guard let window else { return }
 
-        let width: CGFloat = 520
-        let totalHeight: CGFloat = 660
+        let width: CGFloat = 540
+        let totalHeight: CGFloat = 680
         let contentView = NSView(frame: NSRect(x: 0, y: 0, width: width, height: totalHeight))
         var y: CGFloat = 16
 
-        // Save button
         let saveBtn = NSButton(title: "Save", target: self, action: #selector(saveConfig))
         saveBtn.frame = NSRect(x: width - 100, y: y, width: 80, height: 32)
         saveBtn.keyEquivalent = "\r"
@@ -160,7 +118,6 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
         addSeparator(to: contentView, at: y, width: width)
         y += 16
 
-        // Profile switch button
         let switchLabel = NSTextField(labelWithString: "Switch profiles:")
         switchLabel.frame = NSRect(x: 20, y: y + 2, width: 110, height: 20)
         switchLabel.alignment = .right
@@ -168,11 +125,8 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
         contentView.addSubview(switchLabel)
 
         switchPopup = NSPopUpButton(frame: NSRect(x: 140, y: y, width: 160, height: 26), pullsDown: false)
-        for btn in SwitchButton.allCases {
-            switchPopup.addItem(withTitle: btn.rawValue)
-        }
-        let selectedIdx = SwitchButton.allCases.firstIndex(of: appConfig.switchButton) ?? 0
-        switchPopup.selectItem(at: selectedIdx)
+        for btn in SwitchButton.allCases { switchPopup.addItem(withTitle: btn.rawValue) }
+        switchPopup.selectItem(at: SwitchButton.allCases.firstIndex(of: appConfig.switchButton) ?? 0)
         switchPopup.target = self
         switchPopup.action = #selector(switchButtonChanged)
         contentView.addSubview(switchPopup)
@@ -181,20 +135,24 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
         addSeparator(to: contentView, at: y, width: width)
         y += 8
 
-        // Tab view
         let tabHeight = totalHeight - y - 10
         tabView = NSTabView(frame: NSRect(x: 10, y: y, width: width - 20, height: tabHeight))
         tabView.delegate = self
         contentView.addSubview(tabView)
 
-        for index in appConfig.profiles.indices {
-            addTab(for: index)
-        }
+        for index in appConfig.profiles.indices { addTab(for: index) }
         if appConfig.safeIndex < tabView.numberOfTabViewItems {
             tabView.selectTabViewItem(at: appConfig.safeIndex)
         }
 
         window.contentView = contentView
+    }
+
+    private func addSeparator(to view: NSView, at y: CGFloat, width: CGFloat) {
+        let sep = NSBox()
+        sep.boxType = .separator
+        sep.frame = NSRect(x: 20, y: y, width: width - 40, height: 1)
+        view.addSubview(sep)
     }
 
     private func selectDropdownItem(_ dropdown: NSPopUpButton, for keyCode: UInt16) {
@@ -208,18 +166,13 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
         dropdown.selectItem(at: 0)
     }
 
-    private func addSeparator(to view: NSView, at y: CGFloat, width: CGFloat) {
-        let sep = NSBox()
-        sep.boxType = .separator
-        sep.frame = NSRect(x: 20, y: y, width: width - 40, height: 1)
-        view.addSubview(sep)
-    }
+    // MARK: - Tabs
 
     private func addTab(for profileIndex: Int) {
         let profile = appConfig.profiles[profileIndex]
         let item = NSTabViewItem(identifier: profile.id)
         item.label = "\(profile.color.emoji) Profile \(profileIndex + 1)"
-        item.view = NSView() // placeholder, built lazily on select
+        item.view = NSView()
         tabView.addTabViewItem(item)
     }
 
@@ -229,14 +182,14 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
         item.view = buildMappingView(for: profileId)
     }
 
-    // MARK: - NSTabViewDelegate
-
     func tabView(_ tabView: NSTabView, willSelect tabViewItem: NSTabViewItem?) {
         if let item = tabViewItem { ensureTabBuilt(item) }
     }
 
+    // MARK: - Mapping View
+
     private func buildMappingView(for profileId: UUID) -> NSView {
-        let width: CGFloat = 480
+        let width: CGFloat = 500
         let view = NSView()
         var y: CGFloat = 8
 
@@ -258,7 +211,6 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
             moveRightBtn.frame = NSRect(x: width - 36, y: y, width: 30, height: 26)
             view.addSubview(moveRightBtn)
         }
-
         y += 36
 
         let sep = NSBox()
@@ -267,60 +219,31 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
         view.addSubview(sep)
         y += 12
 
-        // Mapping rows: label | [Record] | [Dropdown] | [✕]
+        // Mapping rows
         let profileIdx = appConfig.profiles.firstIndex(where: { $0.id == profileId })
 
         for button in ControllerButton.allCases.reversed() {
+            let action = profileIdx.flatMap { appConfig.profiles[$0].action(for: button) }
+            let isMacro: Bool
+            if case .macro = action { isMacro = true } else { isMacro = false }
+
+            // Label
             let label = NSTextField(labelWithString: button.rawValue)
-            label.frame = NSRect(x: 4, y: y + 3, width: 70, height: 18)
+            label.frame = NSRect(x: 4, y: y + 3, width: 55, height: 18)
             label.alignment = .right
             label.font = NSFont.systemFont(ofSize: 12)
             view.addSubview(label)
 
-            let captureBtn = KeyCaptureButton(frame: NSRect(x: 80, y: y, width: 100, height: 26))
-            if let idx = profileIdx {
-                captureBtn.keyCode = appConfig.profiles[idx].keyCode(for: button)
+            if isMacro, case .macro(let steps) = action {
+                y = buildMacroRow(in: view, at: y, profileId: profileId, button: button, steps: steps, width: width)
+            } else {
+                y = buildSingleKeyRow(in: view, at: y, profileId: profileId, button: button, action: action, width: width)
             }
-            captureBtn.updateTitle()
-            view.addSubview(captureBtn)
-
-            let dropdown = NSPopUpButton(frame: NSRect(x: 186, y: y, width: 200, height: 26), pullsDown: false)
-            dropdown.menu = sharedKeyMenu.copy() as? NSMenu
-            if let kc = captureBtn.keyCode {
-                selectDropdownItem(dropdown, for: kc)
-            }
-            view.addSubview(dropdown)
-
-            let clearBtn = NSButton(title: "✕", target: nil, action: nil)
-            clearBtn.bezelStyle = .rounded
-            clearBtn.frame = NSRect(x: 392, y: y, width: 30, height: 26)
-            view.addSubview(clearBtn)
-
-            // Single handler for dropdown + clear + record sync
-            let handler = MappingActionHandler(profileId: profileId, button: button, captureBtn: captureBtn, dropdown: dropdown, controller: self)
-
-            captureBtn.onCapture = { [weak self, weak handler, weak dropdown] keyCode in
-                guard let handler else { return }
-                if let idx = handler.profileIndex() {
-                    handler.controller?.appConfig.profiles[idx].setKeyCode(keyCode, for: button)
-                }
-                if let dropdown { self?.selectDropdownItem(dropdown, for: keyCode) }
-            }
-
-            dropdown.target = handler
-            dropdown.action = #selector(MappingActionHandler.dropdownChanged(_:))
-
-            clearBtn.target = handler
-            clearBtn.action = #selector(MappingActionHandler.clear)
-
-            // Keep handler alive
-            objc_setAssociatedObject(dropdown, "handler", handler, .OBJC_ASSOCIATION_RETAIN)
-
-            y += 32
         }
 
+        // Hint
         y += 4
-        let hint = NSTextField(labelWithString: "Record a key or select from dropdown. ✕ to clear.")
+        let hint = NSTextField(labelWithString: "Record key or select from dropdown. [M] = macro mode, [K] = key mode.")
         hint.frame = NSRect(x: 10, y: y, width: width - 20, height: 16)
         hint.font = NSFont.systemFont(ofSize: 11)
         hint.textColor = .secondaryLabelColor
@@ -329,6 +252,250 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
 
         view.frame = NSRect(x: 0, y: 0, width: width, height: y)
         return view
+    }
+
+    // MARK: - Single Key Row
+
+    private func buildSingleKeyRow(in view: NSView, at y: CGFloat, profileId: UUID, button: ControllerButton, action: ButtonAction?, width: CGFloat) -> CGFloat {
+        let keyCode: UInt16? = {
+            if case .singleKey(let kc) = action { return kc }
+            return nil
+        }()
+
+        let captureBtn = KeyCaptureButton(frame: NSRect(x: 65, y: y, width: 80, height: 26))
+        captureBtn.keyCode = keyCode
+        captureBtn.updateTitle()
+        view.addSubview(captureBtn)
+
+        let dropdown = NSPopUpButton(frame: NSRect(x: 150, y: y, width: 190, height: 26), pullsDown: false)
+        dropdown.menu = sharedKeyMenu.copy() as? NSMenu
+        if let kc = keyCode { selectDropdownItem(dropdown, for: kc) }
+        view.addSubview(dropdown)
+
+        let clearBtn = NSButton(title: "✕", target: nil, action: nil)
+        clearBtn.bezelStyle = .rounded
+        clearBtn.frame = NSRect(x: 346, y: y, width: 26, height: 26)
+        view.addSubview(clearBtn)
+
+        // Macro toggle
+        let macroBtn = NSButton(title: "M", target: nil, action: nil)
+        macroBtn.bezelStyle = .rounded
+        macroBtn.toolTip = "Switch to Macro mode"
+        macroBtn.frame = NSRect(x: 378, y: y, width: 26, height: 26)
+        view.addSubview(macroBtn)
+
+        // Wire up capture → dropdown sync + config
+        captureBtn.onCapture = { [weak self, weak dropdown] keyCode in
+            guard let self, let idx = self.profileIndex(for: profileId) else { return }
+            self.appConfig.profiles[idx].setAction(.singleKey(keyCode), for: button)
+            if let dropdown { self.selectDropdownItem(dropdown, for: keyCode) }
+        }
+
+        // Wire up dropdown → capture sync + config
+        let dropHandler = ActionHandler(profileId: profileId, button: button, controller: self)
+        dropHandler.onDropdown = { [weak captureBtn] keyCode in
+            captureBtn?.keyCode = keyCode
+            captureBtn?.updateTitle()
+        }
+        dropdown.target = dropHandler
+        dropdown.action = #selector(ActionHandler.dropdownChanged(_:))
+        objc_setAssociatedObject(dropdown, "handler", dropHandler, .OBJC_ASSOCIATION_RETAIN)
+
+        // Clear
+        let clearHandler = ActionHandler(profileId: profileId, button: button, controller: self)
+        clearHandler.onClear = { [weak captureBtn, weak dropdown] in
+            captureBtn?.keyCode = nil
+            captureBtn?.updateTitle()
+            dropdown?.selectItem(at: 0)
+        }
+        clearBtn.target = clearHandler
+        clearBtn.action = #selector(ActionHandler.clear)
+        objc_setAssociatedObject(clearBtn, "handler", clearHandler, .OBJC_ASSOCIATION_RETAIN)
+
+        // Macro toggle
+        let macroToggle = ActionHandler(profileId: profileId, button: button, controller: self)
+        macroToggle.onToggleMacro = { [weak self] in
+            guard let self, let idx = self.profileIndex(for: profileId) else { return }
+            self.appConfig.profiles[idx].setAction(.macro([]), for: button)
+            self.rebuildCurrentTab()
+        }
+        macroBtn.target = macroToggle
+        macroBtn.action = #selector(ActionHandler.toggleMacro)
+        objc_setAssociatedObject(macroBtn, "handler", macroToggle, .OBJC_ASSOCIATION_RETAIN)
+
+        return y + 32
+    }
+
+    // MARK: - Macro Row
+
+    private func buildMacroRow(in view: NSView, at startY: CGFloat, profileId: UUID, button: ControllerButton, steps: [MacroStep], width: CGFloat) -> CGFloat {
+        var y = startY
+        let indent: CGFloat = 65
+
+        // Controls row: [K] [+ Step] (no steps)
+        let keyBtn = NSButton(title: "K", target: nil, action: nil)
+        keyBtn.bezelStyle = .rounded
+        keyBtn.toolTip = "Switch to Key mode"
+        keyBtn.frame = NSRect(x: indent, y: y, width: 26, height: 24)
+        view.addSubview(keyBtn)
+
+        let keyToggle = ActionHandler(profileId: profileId, button: button, controller: self)
+        keyToggle.onToggleMacro = { [weak self] in
+            guard let self, let idx = self.profileIndex(for: profileId) else { return }
+            self.appConfig.profiles[idx].setAction(nil, for: button)
+            self.rebuildCurrentTab()
+        }
+        keyBtn.target = keyToggle
+        keyBtn.action = #selector(ActionHandler.toggleMacro)
+        objc_setAssociatedObject(keyBtn, "handler", keyToggle, .OBJC_ASSOCIATION_RETAIN)
+
+        let addBtn = NSButton(title: "+ Step", target: nil, action: nil)
+        addBtn.bezelStyle = .rounded
+        addBtn.frame = NSRect(x: indent + 32, y: y, width: 60, height: 24)
+        view.addSubview(addBtn)
+
+        let addHandler = ActionHandler(profileId: profileId, button: button, controller: self)
+        addHandler.onAddStep = { [weak self] in
+            guard let self, let idx = self.profileIndex(for: profileId) else { return }
+            if case .macro(var steps) = self.appConfig.profiles[idx].action(for: button) {
+                steps.append(.keyCombo(0, modifiers: []))
+                self.appConfig.profiles[idx].setAction(.macro(steps), for: button)
+                self.rebuildCurrentTab()
+            }
+        }
+        addBtn.target = addHandler
+        addBtn.action = #selector(ActionHandler.addStep)
+        objc_setAssociatedObject(addBtn, "handler", addHandler, .OBJC_ASSOCIATION_RETAIN)
+
+        if steps.isEmpty {
+            let empty = NSTextField(labelWithString: "(no steps — click + Step)")
+            empty.frame = NSRect(x: indent + 98, y: y + 3, width: 200, height: 18)
+            empty.font = NSFont.systemFont(ofSize: 11)
+            empty.textColor = .secondaryLabelColor
+            view.addSubview(empty)
+        }
+        y += 28
+
+        // Step rows — reversed so step 1 appears at top visually (AppKit y is bottom-up)
+        for (stepIdx, step) in steps.enumerated().reversed() {
+            y = buildStepRow(in: view, at: y, indent: indent, profileId: profileId, button: button, stepIndex: stepIdx, step: step, width: width)
+        }
+
+        // Bottom separator for this macro block
+        y += 4
+        return y
+    }
+
+    private func buildStepRow(in view: NSView, at y: CGFloat, indent: CGFloat, profileId: UUID, button: ControllerButton, stepIndex: Int, step: MacroStep, width: CGFloat) -> CGFloat {
+        var x = indent
+
+        // Step number
+        let numLabel = NSTextField(labelWithString: "\(stepIndex + 1).")
+        numLabel.frame = NSRect(x: x, y: y + 2, width: 18, height: 18)
+        numLabel.font = NSFont.systemFont(ofSize: 11)
+        numLabel.textColor = .secondaryLabelColor
+        view.addSubview(numLabel)
+        x += 20
+
+        // Step type dropdown
+        let typePopup = NSPopUpButton(frame: NSRect(x: x, y: y, width: 90, height: 22), pullsDown: false)
+        typePopup.font = NSFont.systemFont(ofSize: 11)
+        typePopup.addItem(withTitle: "Key Combo")
+        typePopup.addItem(withTitle: "Type Text")
+        typePopup.selectItem(at: step.type == .typeText ? 1 : 0)
+        view.addSubview(typePopup)
+
+        let typeHandler = StepHandler(profileId: profileId, button: button, stepIndex: stepIndex, controller: self)
+        typeHandler.onTypeChange = { [weak self] newType in
+            guard let self, let idx = self.profileIndex(for: profileId),
+                  case .macro(var steps) = self.appConfig.profiles[idx].action(for: button),
+                  stepIndex < steps.count else { return }
+            steps[stepIndex] = newType == 0 ? .keyCombo(0, modifiers: []) : .typeText("")
+            self.appConfig.profiles[idx].setAction(.macro(steps), for: button)
+            self.rebuildCurrentTab()
+        }
+        typePopup.target = typeHandler
+        typePopup.action = #selector(StepHandler.typeChanged(_:))
+        objc_setAssociatedObject(typePopup, "handler", typeHandler, .OBJC_ASSOCIATION_RETAIN)
+        x += 95
+
+        if step.type == .keyCombo {
+            // Key record button
+            let captureBtn = KeyCaptureButton(frame: NSRect(x: x, y: y, width: 70, height: 22))
+            captureBtn.keyCode = step.keyCode == 0 ? nil : step.keyCode
+            captureBtn.updateTitle()
+            captureBtn.font = NSFont.systemFont(ofSize: 11)
+            view.addSubview(captureBtn)
+            x += 75
+
+            captureBtn.onCapture = { [weak self] keyCode in
+                guard let self, let idx = self.profileIndex(for: profileId),
+                      case .macro(var steps) = self.appConfig.profiles[idx].action(for: button),
+                      stepIndex < steps.count else { return }
+                steps[stepIndex] = .keyCombo(keyCode, modifiers: steps[stepIndex].modifiers)
+                self.appConfig.profiles[idx].setAction(.macro(steps), for: button)
+            }
+
+            // Modifier checkboxes inline
+            for (symbol, mod) in [("⌘", "cmd"), ("⇧", "shift"), ("⌥", "opt"), ("⌃", "ctrl")] {
+                let cb = NSButton(checkboxWithTitle: symbol, target: nil, action: nil)
+                cb.frame = NSRect(x: x, y: y, width: 34, height: 22)
+                cb.state = step.modifiers.contains(mod) ? .on : .off
+                view.addSubview(cb)
+
+                let modHandler = StepHandler(profileId: profileId, button: button, stepIndex: stepIndex, controller: self)
+                modHandler.modifierName = mod
+                cb.target = modHandler
+                cb.action = #selector(StepHandler.modifierToggled(_:))
+                objc_setAssociatedObject(cb, "handler", modHandler, .OBJC_ASSOCIATION_RETAIN)
+                x += 36
+            }
+        } else {
+            // Text field
+            let textField = NSTextField(frame: NSRect(x: x, y: y, width: width - x - 40, height: 22))
+            textField.stringValue = step.text ?? ""
+            textField.font = NSFont.systemFont(ofSize: 11)
+            textField.placeholderString = "Type text here..."
+            view.addSubview(textField)
+
+            let textHandler = StepHandler(profileId: profileId, button: button, stepIndex: stepIndex, controller: self)
+            textField.delegate = textHandler
+            objc_setAssociatedObject(textField, "handler", textHandler, .OBJC_ASSOCIATION_RETAIN)
+        }
+
+        // Delete step
+        let delBtn = NSButton(title: "✕", target: nil, action: nil)
+        delBtn.bezelStyle = .rounded
+        delBtn.frame = NSRect(x: width - 35, y: y, width: 24, height: 22)
+        view.addSubview(delBtn)
+
+        let delHandler = StepHandler(profileId: profileId, button: button, stepIndex: stepIndex, controller: self)
+        delHandler.onDelete = { [weak self] in
+            guard let self, let idx = self.profileIndex(for: profileId),
+                  case .macro(var steps) = self.appConfig.profiles[idx].action(for: button),
+                  stepIndex < steps.count else { return }
+            steps.remove(at: stepIndex)
+            self.appConfig.profiles[idx].setAction(.macro(steps), for: button)
+            self.rebuildCurrentTab()
+        }
+        delBtn.target = delHandler
+        delBtn.action = #selector(StepHandler.deleteStep)
+        objc_setAssociatedObject(delBtn, "handler", delHandler, .OBJC_ASSOCIATION_RETAIN)
+
+        return y + 26
+    }
+
+    // MARK: - Helpers
+
+    fileprivate func profileIndex(for id: UUID) -> Int? {
+        appConfig.profiles.firstIndex(where: { $0.id == id })
+    }
+
+    private func rebuildCurrentTab() {
+        guard let item = tabView.selectedTabViewItem, let id = item.identifier as? UUID else { return }
+        builtTabs.remove(id)
+        item.view = buildMappingView(for: id)
+        builtTabs.insert(id)
     }
 
     // MARK: - Actions
@@ -388,9 +555,87 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
             tabView.removeTabViewItem(tabView.tabViewItems[0])
         }
         builtTabs.removeAll()
-        for index in appConfig.profiles.indices {
-            addTab(for: index)
-        }
+        for index in appConfig.profiles.indices { addTab(for: index) }
     }
 }
 
+// MARK: - Action Handler (single key row)
+
+private final class ActionHandler: NSObject {
+    let profileId: UUID
+    let button: ControllerButton
+    weak var controller: SettingsWindowController?
+    var onDropdown: ((UInt16) -> Void)?
+    var onClear: (() -> Void)?
+    var onToggleMacro: (() -> Void)?
+    var onAddStep: (() -> Void)?
+
+    init(profileId: UUID, button: ControllerButton, controller: SettingsWindowController) {
+        self.profileId = profileId
+        self.button = button
+        self.controller = controller
+    }
+
+    @objc func dropdownChanged(_ sender: NSPopUpButton) {
+        guard let item = sender.selectedItem,
+              let keyCode = (item.representedObject as? NSNumber)?.uint16Value,
+              let controller, let idx = controller.profileIndex(for: profileId) else { return }
+        controller.appConfig.profiles[idx].setAction(.singleKey(keyCode), for: button)
+        onDropdown?(keyCode)
+    }
+
+    @objc func clear() {
+        guard let controller, let idx = controller.profileIndex(for: profileId) else { return }
+        controller.appConfig.profiles[idx].setAction(nil, for: button)
+        onClear?()
+    }
+
+    @objc func toggleMacro() { onToggleMacro?() }
+    @objc func addStep() { onAddStep?() }
+}
+
+// MARK: - Step Handler (macro step row)
+
+private final class StepHandler: NSObject, NSTextFieldDelegate {
+    let profileId: UUID
+    let button: ControllerButton
+    let stepIndex: Int
+    weak var controller: SettingsWindowController?
+    var onTypeChange: ((Int) -> Void)?
+    var onDelete: (() -> Void)?
+    var modifierName: String?
+
+    init(profileId: UUID, button: ControllerButton, stepIndex: Int, controller: SettingsWindowController) {
+        self.profileId = profileId
+        self.button = button
+        self.stepIndex = stepIndex
+        self.controller = controller
+    }
+
+    @objc func typeChanged(_ sender: NSPopUpButton) {
+        onTypeChange?(sender.indexOfSelectedItem)
+    }
+
+    @objc func deleteStep() { onDelete?() }
+
+    @objc func modifierToggled(_ sender: NSButton) {
+        guard let mod = modifierName, let controller,
+              let idx = controller.profileIndex(for: profileId),
+              case .macro(var steps) = controller.appConfig.profiles[idx].action(for: button),
+              stepIndex < steps.count else { return }
+        var mods = steps[stepIndex].modifiers
+        if sender.state == .on { mods.append(mod) } else { mods.removeAll { $0 == mod } }
+        steps[stepIndex] = .keyCombo(steps[stepIndex].keyCode ?? 0, modifiers: mods)
+        controller.appConfig.profiles[idx].setAction(.macro(steps), for: button)
+    }
+
+    // NSTextFieldDelegate — save text on edit
+    func controlTextDidChange(_ obj: Notification) {
+        guard let textField = obj.object as? NSTextField, let controller,
+              let idx = controller.profileIndex(for: profileId),
+              case .macro(var steps) = controller.appConfig.profiles[idx].action(for: button),
+              stepIndex < steps.count else { return }
+        steps[stepIndex] = .typeText(textField.stringValue)
+        controller.appConfig.profiles[idx].setAction(.macro(steps), for: button)
+    }
+}

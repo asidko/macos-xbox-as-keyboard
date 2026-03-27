@@ -222,15 +222,86 @@ enum KeyCodeNames {
     }
 }
 
+// MARK: - Macro Types
+
+struct MacroStep: Codable, Equatable {
+    enum StepType: String, Codable {
+        case keyCombo
+        case typeText
+    }
+
+    var type: StepType
+    var keyCode: UInt16?
+    var modifiers: [String]
+    var text: String?
+
+    static func keyCombo(_ keyCode: UInt16, modifiers: [String] = []) -> MacroStep {
+        MacroStep(type: .keyCombo, keyCode: keyCode, modifiers: modifiers, text: nil)
+    }
+
+    static func typeText(_ text: String) -> MacroStep {
+        MacroStep(type: .typeText, keyCode: nil, modifiers: [], text: text)
+    }
+
+    var displayName: String {
+        switch type {
+        case .keyCombo:
+            var parts: [String] = []
+            if modifiers.contains("cmd") { parts.append("⌘") }
+            if modifiers.contains("shift") { parts.append("⇧") }
+            if modifiers.contains("opt") { parts.append("⌥") }
+            if modifiers.contains("ctrl") { parts.append("⌃") }
+            if let kc = keyCode { parts.append(KeyCodeNames.name(for: kc)) }
+            return parts.joined(separator: "+")
+        case .typeText:
+            return "\"\(text ?? "")\""
+        }
+    }
+}
+
+enum ButtonAction: Codable, Equatable {
+    case singleKey(UInt16)
+    case macro([MacroStep])
+
+    // Custom coding to handle backward compat with plain UInt16
+    enum CodingKeys: String, CodingKey {
+        case singleKey, macro
+    }
+
+    init(from decoder: Decoder) throws {
+        // Try as plain UInt16 first (legacy format)
+        if let container = try? decoder.singleValueContainer(),
+           let keyCode = try? container.decode(UInt16.self) {
+            self = .singleKey(keyCode)
+            return
+        }
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let keyCode = try container.decodeIfPresent(UInt16.self, forKey: .singleKey) {
+            self = .singleKey(keyCode)
+        } else if let steps = try container.decodeIfPresent([MacroStep].self, forKey: .macro) {
+            self = .macro(steps)
+        } else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown ButtonAction"))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .singleKey(let keyCode):
+            try container.encode(keyCode, forKey: .singleKey)
+        case .macro(let steps):
+            try container.encode(steps, forKey: .macro)
+        }
+    }
+}
+
 // MARK: - Profile
 
 struct Profile: Codable, Identifiable {
     var id: UUID
     var colorIndex: Int
-    var mappings: [String: UInt16]
-
-    // Legacy field — ignored but kept for backward compat decoding
-    var name: String?
+    var mappings: [String: ButtonAction]
 
     var color: ProfileColor { ProfileColor.forIndex(colorIndex) }
 
@@ -254,17 +325,17 @@ struct Profile: Codable, Identifiable {
         self.colorIndex = colorIndex
         self.mappings = [:]
         for (button, keyCode) in Self.defaultMappings {
-            mappings[button.rawValue] = keyCode
+            mappings[button.rawValue] = .singleKey(keyCode)
         }
     }
 
-    func keyCode(for button: ControllerButton) -> UInt16? {
+    func action(for button: ControllerButton) -> ButtonAction? {
         mappings[button.rawValue]
     }
 
-    mutating func setKeyCode(_ keyCode: UInt16?, for button: ControllerButton) {
-        if let keyCode {
-            mappings[button.rawValue] = keyCode
+    mutating func setAction(_ action: ButtonAction?, for button: ControllerButton) {
+        if let action {
+            mappings[button.rawValue] = action
         } else {
             mappings.removeValue(forKey: button.rawValue)
         }
@@ -372,7 +443,7 @@ enum ConfigStore {
             if let legacy = try? JSONDecoder().decode(LegacyMappingConfig.self, from: data) {
                 log.info("Migrating legacy config to profile format")
                 var config = AppConfig()
-                config.profiles[0].mappings = legacy.mappings
+                config.profiles[0].mappings = legacy.mappings.mapValues { .singleKey($0) }
                 save(config)
                 return config
             }
