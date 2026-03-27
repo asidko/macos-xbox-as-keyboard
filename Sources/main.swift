@@ -175,6 +175,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsItem.target = self
         menu.addItem(settingsItem)
 
+        let aboutItem = NSMenuItem(title: "About", action: #selector(showAbout), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+
         menu.addItem(.separator())
 
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
@@ -222,6 +226,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsController = controller
         controller.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func showAbout() {
+        let alert = NSAlert()
+        alert.messageText = "Xbox As Keyboard"
+        alert.informativeText = "Version: \(buildVersion)\nBuild: \(buildHash)"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.icon = AppIcon.create()
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     @objc private func quit() {

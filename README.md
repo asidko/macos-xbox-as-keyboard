@@ -16,7 +16,7 @@ Free, lightweight macOS menu bar app that maps your game controller buttons to k
 
 ## Install
 
-Download the latest `.zip` from [Releases](../../releases), unzip, drag to Applications.
+Download the latest `.dmg` from [Releases](../../releases), open it, drag the app to Applications.
 
 Or build from source:
 

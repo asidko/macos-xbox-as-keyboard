@@ -11,17 +11,21 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Build
-        run: make build-release
+      - name: Build universal binary
+        run: make build-universal
 
-      - name: Package
+      - name: Create DMG
         run: |
-          cd .build/release
-          zip -r XboxAsKeyboard.zip XboxAsKeyboard.app
+          mkdir -p dmg-staging
+          cp -R .build/release/XboxAsKeyboard.app dmg-staging/
+          ln -s /Applications dmg-staging/Applications
+          hdiutil create -volname "XboxAsKeyboard" -srcfolder dmg-staging -ov -format UDZO XboxAsKeyboard.dmg
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: .build/release/XboxAsKeyboard.zip
+          files: XboxAsKeyboard.dmg
           generate_release_notes: true
