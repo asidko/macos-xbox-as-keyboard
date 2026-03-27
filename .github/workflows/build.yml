@@ -12,4 +12,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build
-        run: swift build -c release
+        run: make build-release
