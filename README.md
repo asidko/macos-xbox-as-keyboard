@@ -1,6 +1,6 @@
 # Xbox As Keyboard
 
-> Map your game controller to keyboard keys on macOS. Free, open source, no bloat.
+A simple menu bar app that maps your game controller buttons to keyboard keys. Install, launch, and it just works — sits in the tray, no setup needed. Free, open source, no bloat.
 
 [![Build](../../actions/workflows/build.yml/badge.svg)](../../actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
