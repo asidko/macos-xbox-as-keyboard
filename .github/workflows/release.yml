@@ -14,8 +14,22 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup signing
+        run: |
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import certs/dev.p12 -k build.keychain -P temp123 -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+
       - name: Build universal binary
-        run: make build-universal
+        run: |
+          make generate-build-info
+          swift build -c release --arch arm64 --arch x86_64
+          mkdir -p .build/release/XboxAsKeyboard.app/Contents/MacOS
+          cp .build/apple/Products/Release/XboxAsKeyboard .build/release/XboxAsKeyboard.app/Contents/MacOS/
+          cp Info.plist .build/release/XboxAsKeyboard.app/Contents/
+          codesign --force --sign "XboxAsKeyboard Dev" .build/release/XboxAsKeyboard.app
 
       - name: Create DMG
         run: |
