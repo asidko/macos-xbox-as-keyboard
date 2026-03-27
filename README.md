@@ -1,34 +1,49 @@
 # Xbox As Keyboard
 
-Free, lightweight macOS menu bar app that maps your game controller buttons to keyboard keys.
+> Map your game controller to keyboard keys on macOS. Free, open source, no bloat.
+
+[![Build](../../actions/workflows/build.yml/badge.svg)](../../actions/workflows/build.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black.svg)]()
+
+**[Download latest release](../../releases/latest)**
 
 ![Screenshot](screenshot.jpeg)
 
 ## Features
 
-- Map any controller button to any keyboard key (record or select from dropdown)
-- Modifier keys (Cmd, Shift, Opt, Ctrl) that combine with other mapped keys
-- Macros — chain key combos and text typing into a single button press
-- Multiple profiles with color-coded menu bar indicator and instant switching
+- Map any controller button to any keyboard key (record or pick from dropdown)
+- Modifier keys (Cmd, Shift, Opt, Ctrl) — hold and combine with other keys
+- Macros — chain key combos and text typing into one button press
+- Multiple profiles with color indicators and instant switching via controller
 - Works with Xbox, PlayStation, and any MFi-compatible gamepad
-- Lightweight — runs as a menu bar icon, no dock clutter
-- Config saved to `~/.config/xboxaskeyboard/config.json`
+- Runs as a tiny menu bar icon — no dock clutter, no windows
 
 ## Install
 
-Download the latest `.dmg` from [Releases](../../releases), open it, drag the app to Applications.
+Download the `.dmg` from the **[latest release](../../releases/latest)**, open it, drag to Applications.
 
-Or build from source:
+On first launch: right-click the app > **Open** (required for unsigned apps). Grant Accessibility permission when prompted.
+
+### Build from source
 
 ```bash
+git clone https://github.com/user/macos-xbox-as-keyboard.git
+cd macos-xbox-as-keyboard
 make install
 ```
 
-Requires macOS 13+. On first launch: right-click the app > Open (Gatekeeper bypass for unsigned apps). Grant Accessibility permission when prompted.
+Requires macOS 13+ and Swift 5.9+.
 
 ## Default mappings
 
-D-pad = Arrow keys, A/B/X/Y = A/B/X/Y keys, LB/RB = Page Up/Down, LT/RT = Home/End, Menu = Switch profile
+D-pad = Arrow keys, A/B/X/Y = A/B/X/Y, LB/RB = Page Up/Down, LT/RT = Home/End, Menu = Switch profile
+
+All mappings are fully customizable in Settings.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for build instructions and dev setup.
 
 ## License
 
