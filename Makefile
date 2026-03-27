@@ -6,11 +6,12 @@ CERT_PASS = temp123
 CERT_NAME = XboxAsKeyboard Dev
 KEYCHAIN = $(HOME)/Library/Keychains/login.keychain-db
 
-.PHONY: build run install clean setup-cert
+.PHONY: build build-release run install clean setup-cert
 
 setup-cert:
 	@security find-identity -v -p codesigning | grep -q "$(CERT_NAME)" || (echo "Importing dev certificate..." && security import $(CERT_P12) -k $(KEYCHAIN) -T /usr/bin/codesign -P "$(CERT_PASS)" && echo "Certificate imported.")
 
+# Dev build: uses local cert so Accessibility permission persists across rebuilds
 build: setup-cert
 	swift build -c release
 	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"
@@ -18,6 +19,15 @@ build: setup-cert
 	cp Info.plist "$(APP_BUNDLE)/Contents/"
 	codesign --force --sign "$(CERT_NAME)" "$(APP_BUNDLE)"
 	@echo "Signed with $(CERT_NAME)"
+
+# CI/release build: ad-hoc signed, no cert needed
+build-release:
+	swift build -c release
+	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"
+	cp $(BUILD_DIR)/$(APP_NAME) "$(APP_BUNDLE)/Contents/MacOS/"
+	cp Info.plist "$(APP_BUNDLE)/Contents/"
+	codesign --force --sign - "$(APP_BUNDLE)"
+	@echo "Ad-hoc signed for distribution"
 
 run: build
 	open "$(APP_BUNDLE)"

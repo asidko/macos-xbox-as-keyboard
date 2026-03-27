@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build
-        run: make build
+        run: make build-release
 
       - name: Package
         run: |

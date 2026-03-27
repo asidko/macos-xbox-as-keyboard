@@ -24,7 +24,7 @@ Or build from source:
 make install
 ```
 
-Requires macOS 13+ and Accessibility permission (prompted on first launch).
+Requires macOS 13+. On first launch: right-click the app > Open (Gatekeeper bypass for unsigned apps). Grant Accessibility permission when prompted.
 
 ## Default mappings
 
