@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Carbon.HIToolbox
 import os
 
@@ -21,101 +21,158 @@ enum ControllerButton: String, CaseIterable, Codable {
     case rightTrigger = "RT"
 }
 
-// MARK: - Key Code Display Names
+// MARK: - Profile Colors
 
-enum KeyCodeNames {
-    static func name(for keyCode: UInt16) -> String {
-        switch Int(keyCode) {
-        case kVK_UpArrow: return "↑"
-        case kVK_DownArrow: return "↓"
-        case kVK_LeftArrow: return "←"
-        case kVK_RightArrow: return "→"
-        case kVK_Return: return "Return"
-        case kVK_Tab: return "Tab"
-        case kVK_Space: return "Space"
-        case kVK_Delete: return "Delete"
-        case kVK_Escape: return "Esc"
-        case kVK_ForwardDelete: return "Fwd Del"
-        case kVK_Home: return "Home"
-        case kVK_End: return "End"
-        case kVK_PageUp: return "Page Up"
-        case kVK_PageDown: return "Page Down"
-        case kVK_F1: return "F1"
-        case kVK_F2: return "F2"
-        case kVK_F3: return "F3"
-        case kVK_F4: return "F4"
-        case kVK_F5: return "F5"
-        case kVK_F6: return "F6"
-        case kVK_F7: return "F7"
-        case kVK_F8: return "F8"
-        case kVK_F9: return "F9"
-        case kVK_F10: return "F10"
-        case kVK_F11: return "F11"
-        case kVK_F12: return "F12"
-        case kVK_ANSI_A: return "A"
-        case kVK_ANSI_B: return "B"
-        case kVK_ANSI_C: return "C"
-        case kVK_ANSI_D: return "D"
-        case kVK_ANSI_E: return "E"
-        case kVK_ANSI_F: return "F"
-        case kVK_ANSI_G: return "G"
-        case kVK_ANSI_H: return "H"
-        case kVK_ANSI_I: return "I"
-        case kVK_ANSI_J: return "J"
-        case kVK_ANSI_K: return "K"
-        case kVK_ANSI_L: return "L"
-        case kVK_ANSI_M: return "M"
-        case kVK_ANSI_N: return "N"
-        case kVK_ANSI_O: return "O"
-        case kVK_ANSI_P: return "P"
-        case kVK_ANSI_Q: return "Q"
-        case kVK_ANSI_R: return "R"
-        case kVK_ANSI_S: return "S"
-        case kVK_ANSI_T: return "T"
-        case kVK_ANSI_U: return "U"
-        case kVK_ANSI_V: return "V"
-        case kVK_ANSI_W: return "W"
-        case kVK_ANSI_X: return "X"
-        case kVK_ANSI_Y: return "Y"
-        case kVK_ANSI_Z: return "Z"
-        case kVK_ANSI_0: return "0"
-        case kVK_ANSI_1: return "1"
-        case kVK_ANSI_2: return "2"
-        case kVK_ANSI_3: return "3"
-        case kVK_ANSI_4: return "4"
-        case kVK_ANSI_5: return "5"
-        case kVK_ANSI_6: return "6"
-        case kVK_ANSI_7: return "7"
-        case kVK_ANSI_8: return "8"
-        case kVK_ANSI_9: return "9"
-        case kVK_ANSI_Minus: return "-"
-        case kVK_ANSI_Equal: return "="
-        case kVK_ANSI_LeftBracket: return "["
-        case kVK_ANSI_RightBracket: return "]"
-        case kVK_ANSI_Backslash: return "\\"
-        case kVK_ANSI_Semicolon: return ";"
-        case kVK_ANSI_Quote: return "'"
-        case kVK_ANSI_Comma: return ","
-        case kVK_ANSI_Period: return "."
-        case kVK_ANSI_Slash: return "/"
-        case kVK_ANSI_Grave: return "`"
-        default: return "Key \(keyCode)"
+enum ProfileColor: Int, CaseIterable, Codable {
+    case blue = 0, green, red, orange, purple, yellow, cyan, pink
+
+    var nsColor: NSColor {
+        switch self {
+        case .blue: return .systemBlue
+        case .green: return .systemGreen
+        case .red: return .systemRed
+        case .orange: return .systemOrange
+        case .purple: return .systemPurple
+        case .yellow: return .systemYellow
+        case .cyan: return .systemCyan
+        case .pink: return .systemPink
         }
     }
 
-    /// Arrow/function keys need special CGEvent flags
+    var emoji: String {
+        switch self {
+        case .blue: return "🔵"
+        case .green: return "🟢"
+        case .red: return "🔴"
+        case .orange: return "🟠"
+        case .purple: return "🟣"
+        case .yellow: return "🟡"
+        case .cyan: return "🩵"
+        case .pink: return "🩷"
+        }
+    }
+
+    static func forIndex(_ index: Int) -> ProfileColor {
+        allCases[index % allCases.count]
+    }
+}
+
+// MARK: - Key Code Registry (single source of truth)
+
+struct KeyEntry {
+    let name: String
+    let keyCode: UInt16
+}
+
+let allKeys: [KeyEntry] = [
+    // Letters
+    KeyEntry(name: "A", keyCode: UInt16(kVK_ANSI_A)),
+    KeyEntry(name: "B", keyCode: UInt16(kVK_ANSI_B)),
+    KeyEntry(name: "C", keyCode: UInt16(kVK_ANSI_C)),
+    KeyEntry(name: "D", keyCode: UInt16(kVK_ANSI_D)),
+    KeyEntry(name: "E", keyCode: UInt16(kVK_ANSI_E)),
+    KeyEntry(name: "F", keyCode: UInt16(kVK_ANSI_F)),
+    KeyEntry(name: "G", keyCode: UInt16(kVK_ANSI_G)),
+    KeyEntry(name: "H", keyCode: UInt16(kVK_ANSI_H)),
+    KeyEntry(name: "I", keyCode: UInt16(kVK_ANSI_I)),
+    KeyEntry(name: "J", keyCode: UInt16(kVK_ANSI_J)),
+    KeyEntry(name: "K", keyCode: UInt16(kVK_ANSI_K)),
+    KeyEntry(name: "L", keyCode: UInt16(kVK_ANSI_L)),
+    KeyEntry(name: "M", keyCode: UInt16(kVK_ANSI_M)),
+    KeyEntry(name: "N", keyCode: UInt16(kVK_ANSI_N)),
+    KeyEntry(name: "O", keyCode: UInt16(kVK_ANSI_O)),
+    KeyEntry(name: "P", keyCode: UInt16(kVK_ANSI_P)),
+    KeyEntry(name: "Q", keyCode: UInt16(kVK_ANSI_Q)),
+    KeyEntry(name: "R", keyCode: UInt16(kVK_ANSI_R)),
+    KeyEntry(name: "S", keyCode: UInt16(kVK_ANSI_S)),
+    KeyEntry(name: "T", keyCode: UInt16(kVK_ANSI_T)),
+    KeyEntry(name: "U", keyCode: UInt16(kVK_ANSI_U)),
+    KeyEntry(name: "V", keyCode: UInt16(kVK_ANSI_V)),
+    KeyEntry(name: "W", keyCode: UInt16(kVK_ANSI_W)),
+    KeyEntry(name: "X", keyCode: UInt16(kVK_ANSI_X)),
+    KeyEntry(name: "Y", keyCode: UInt16(kVK_ANSI_Y)),
+    KeyEntry(name: "Z", keyCode: UInt16(kVK_ANSI_Z)),
+    // Numbers
+    KeyEntry(name: "0", keyCode: UInt16(kVK_ANSI_0)),
+    KeyEntry(name: "1", keyCode: UInt16(kVK_ANSI_1)),
+    KeyEntry(name: "2", keyCode: UInt16(kVK_ANSI_2)),
+    KeyEntry(name: "3", keyCode: UInt16(kVK_ANSI_3)),
+    KeyEntry(name: "4", keyCode: UInt16(kVK_ANSI_4)),
+    KeyEntry(name: "5", keyCode: UInt16(kVK_ANSI_5)),
+    KeyEntry(name: "6", keyCode: UInt16(kVK_ANSI_6)),
+    KeyEntry(name: "7", keyCode: UInt16(kVK_ANSI_7)),
+    KeyEntry(name: "8", keyCode: UInt16(kVK_ANSI_8)),
+    KeyEntry(name: "9", keyCode: UInt16(kVK_ANSI_9)),
+    // Arrows
+    KeyEntry(name: "↑ Up", keyCode: UInt16(kVK_UpArrow)),
+    KeyEntry(name: "↓ Down", keyCode: UInt16(kVK_DownArrow)),
+    KeyEntry(name: "← Left", keyCode: UInt16(kVK_LeftArrow)),
+    KeyEntry(name: "→ Right", keyCode: UInt16(kVK_RightArrow)),
+    // Special
+    KeyEntry(name: "Space", keyCode: UInt16(kVK_Space)),
+    KeyEntry(name: "Return", keyCode: UInt16(kVK_Return)),
+    KeyEntry(name: "Tab", keyCode: UInt16(kVK_Tab)),
+    KeyEntry(name: "Escape", keyCode: UInt16(kVK_Escape)),
+    KeyEntry(name: "Delete", keyCode: UInt16(kVK_Delete)),
+    KeyEntry(name: "Fwd Delete", keyCode: UInt16(kVK_ForwardDelete)),
+    // Navigation
+    KeyEntry(name: "Home", keyCode: UInt16(kVK_Home)),
+    KeyEntry(name: "End", keyCode: UInt16(kVK_End)),
+    KeyEntry(name: "Page Up", keyCode: UInt16(kVK_PageUp)),
+    KeyEntry(name: "Page Down", keyCode: UInt16(kVK_PageDown)),
+    // Function keys
+    KeyEntry(name: "F1", keyCode: UInt16(kVK_F1)),
+    KeyEntry(name: "F2", keyCode: UInt16(kVK_F2)),
+    KeyEntry(name: "F3", keyCode: UInt16(kVK_F3)),
+    KeyEntry(name: "F4", keyCode: UInt16(kVK_F4)),
+    KeyEntry(name: "F5", keyCode: UInt16(kVK_F5)),
+    KeyEntry(name: "F6", keyCode: UInt16(kVK_F6)),
+    KeyEntry(name: "F7", keyCode: UInt16(kVK_F7)),
+    KeyEntry(name: "F8", keyCode: UInt16(kVK_F8)),
+    KeyEntry(name: "F9", keyCode: UInt16(kVK_F9)),
+    KeyEntry(name: "F10", keyCode: UInt16(kVK_F10)),
+    KeyEntry(name: "F11", keyCode: UInt16(kVK_F11)),
+    KeyEntry(name: "F12", keyCode: UInt16(kVK_F12)),
+    // Punctuation
+    KeyEntry(name: "- Minus", keyCode: UInt16(kVK_ANSI_Minus)),
+    KeyEntry(name: "= Equal", keyCode: UInt16(kVK_ANSI_Equal)),
+    KeyEntry(name: "[ Left Bracket", keyCode: UInt16(kVK_ANSI_LeftBracket)),
+    KeyEntry(name: "] Right Bracket", keyCode: UInt16(kVK_ANSI_RightBracket)),
+    KeyEntry(name: "\\ Backslash", keyCode: UInt16(kVK_ANSI_Backslash)),
+    KeyEntry(name: "; Semicolon", keyCode: UInt16(kVK_ANSI_Semicolon)),
+    KeyEntry(name: "' Quote", keyCode: UInt16(kVK_ANSI_Quote)),
+    KeyEntry(name: ", Comma", keyCode: UInt16(kVK_ANSI_Comma)),
+    KeyEntry(name: ". Period", keyCode: UInt16(kVK_ANSI_Period)),
+    KeyEntry(name: "/ Slash", keyCode: UInt16(kVK_ANSI_Slash)),
+    KeyEntry(name: "` Grave", keyCode: UInt16(kVK_ANSI_Grave)),
+]
+
+private let keyCodeToName: [UInt16: String] = {
+    var map: [UInt16: String] = [:]
+    for entry in allKeys { map[entry.keyCode] = entry.name }
+    return map
+}()
+
+// MARK: - Key Code Utilities
+
+enum KeyCodeNames {
+    static func name(for keyCode: UInt16) -> String {
+        keyCodeToName[keyCode] ?? "Key \(keyCode)"
+    }
+
+    private static let fnKeys: Set<UInt16> = [
+        UInt16(kVK_UpArrow), UInt16(kVK_DownArrow), UInt16(kVK_LeftArrow), UInt16(kVK_RightArrow),
+        UInt16(kVK_Home), UInt16(kVK_End), UInt16(kVK_PageUp), UInt16(kVK_PageDown),
+        UInt16(kVK_ForwardDelete),
+        UInt16(kVK_F1), UInt16(kVK_F2), UInt16(kVK_F3), UInt16(kVK_F4),
+        UInt16(kVK_F5), UInt16(kVK_F6), UInt16(kVK_F7), UInt16(kVK_F8),
+        UInt16(kVK_F9), UInt16(kVK_F10), UInt16(kVK_F11), UInt16(kVK_F12),
+    ]
+    private static let numPadKeys: Set<UInt16> = [
+        UInt16(kVK_UpArrow), UInt16(kVK_DownArrow), UInt16(kVK_LeftArrow), UInt16(kVK_RightArrow),
+    ]
+
     static func eventFlags(for keyCode: UInt16) -> CGEventFlags {
-        let fnKeys: Set<UInt16> = [
-            UInt16(kVK_UpArrow), UInt16(kVK_DownArrow), UInt16(kVK_LeftArrow), UInt16(kVK_RightArrow),
-            UInt16(kVK_Home), UInt16(kVK_End), UInt16(kVK_PageUp), UInt16(kVK_PageDown),
-            UInt16(kVK_ForwardDelete),
-            UInt16(kVK_F1), UInt16(kVK_F2), UInt16(kVK_F3), UInt16(kVK_F4),
-            UInt16(kVK_F5), UInt16(kVK_F6), UInt16(kVK_F7), UInt16(kVK_F8),
-            UInt16(kVK_F9), UInt16(kVK_F10), UInt16(kVK_F11), UInt16(kVK_F12),
-        ]
-        let numPadKeys: Set<UInt16> = [
-            UInt16(kVK_UpArrow), UInt16(kVK_DownArrow), UInt16(kVK_LeftArrow), UInt16(kVK_RightArrow),
-        ]
         var flags: CGEventFlags = []
         if fnKeys.contains(keyCode) { flags.insert(.maskSecondaryFn) }
         if numPadKeys.contains(keyCode) { flags.insert(.maskNumericPad) }
@@ -123,10 +180,17 @@ enum KeyCodeNames {
     }
 }
 
-// MARK: - Mapping Configuration
+// MARK: - Profile
 
-struct MappingConfig: Codable {
+struct Profile: Codable, Identifiable {
+    var id: UUID
+    var colorIndex: Int
     var mappings: [String: UInt16]
+
+    // Legacy field — ignored but kept for backward compat decoding
+    var name: String?
+
+    var color: ProfileColor { ProfileColor.forIndex(colorIndex) }
 
     static let defaultMappings: [ControllerButton: UInt16] = [
         .dpadUp: UInt16(kVK_UpArrow),
@@ -143,8 +207,10 @@ struct MappingConfig: Codable {
         .rightTrigger: UInt16(kVK_End),
     ]
 
-    init() {
-        mappings = [:]
+    init(colorIndex: Int) {
+        self.id = UUID()
+        self.colorIndex = colorIndex
+        self.mappings = [:]
         for (button, keyCode) in Self.defaultMappings {
             mappings[button.rawValue] = keyCode
         }
@@ -163,39 +229,133 @@ struct MappingConfig: Codable {
     }
 }
 
+// MARK: - Profile Switch Button
+
+enum SwitchButton: String, CaseIterable, Codable {
+    case menu_ = "Menu"
+    case view_ = "View"
+    case home = "Xbox/Home"
+}
+
+// MARK: - App Configuration
+
+struct AppConfig: Codable {
+    var profiles: [Profile]
+    var activeProfileIndex: Int
+    var switchButton: SwitchButton
+
+    var activeProfile: Profile {
+        precondition(!profiles.isEmpty, "AppConfig must have at least one profile")
+        return profiles[safeIndex]
+    }
+
+    var safeIndex: Int {
+        guard !profiles.isEmpty else { return 0 }
+        return min(max(activeProfileIndex, 0), profiles.count - 1)
+    }
+
+    init() {
+        profiles = [Profile(colorIndex: 0)]
+        activeProfileIndex = 0
+        switchButton = .menu_
+    }
+
+    private func nextColorIndex() -> Int {
+        let used = Set(profiles.map { $0.colorIndex % ProfileColor.allCases.count })
+        for i in 0..<ProfileColor.allCases.count {
+            if !used.contains(i) { return i }
+        }
+        // All 8 colors used — cycle based on total count
+        return profiles.count % ProfileColor.allCases.count
+    }
+
+    mutating func addProfile() -> Int {
+        let index = profiles.count
+        profiles.append(Profile(colorIndex: nextColorIndex()))
+        return index
+    }
+
+    mutating func duplicateProfile(at index: Int) -> Int {
+        var copy = profiles[index]
+        copy.id = UUID()
+        copy.colorIndex = nextColorIndex()
+        profiles.insert(copy, at: index + 1)
+        if activeProfileIndex > index { activeProfileIndex += 1 }
+        return index + 1
+    }
+
+    mutating func deleteProfile(at index: Int) {
+        guard profiles.count > 1 else { return }
+        profiles.remove(at: index)
+        if activeProfileIndex >= profiles.count {
+            activeProfileIndex = profiles.count - 1
+        }
+    }
+
+    mutating func moveProfile(from: Int, to: Int) {
+        let profile = profiles.remove(at: from)
+        profiles.insert(profile, at: to)
+        if activeProfileIndex == from {
+            activeProfileIndex = to
+        } else if from < activeProfileIndex && to >= activeProfileIndex {
+            activeProfileIndex -= 1
+        } else if from > activeProfileIndex && to <= activeProfileIndex {
+            activeProfileIndex += 1
+        }
+    }
+
+    mutating func cycleProfile() {
+        activeProfileIndex = (safeIndex + 1) % profiles.count
+    }
+}
+
 // MARK: - Config Persistence
 
 enum ConfigStore {
     private static let configDir = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".xboxaskeyboard")
+        .appendingPathComponent(".config/xboxaskeyboard")
     private static let configFile = configDir.appendingPathComponent("config.json")
 
-    static func load() -> MappingConfig {
+    static func load() -> AppConfig {
         guard FileManager.default.fileExists(atPath: configFile.path) else {
             log.info("No config file, using defaults")
-            return MappingConfig()
+            return AppConfig()
         }
         do {
             let data = try Data(contentsOf: configFile)
-            let config = try JSONDecoder().decode(MappingConfig.self, from: data)
-            log.info("Config loaded from \(configFile.path)")
-            return config
+            if let config = try? JSONDecoder().decode(AppConfig.self, from: data) {
+                log.info("Config loaded (\(config.profiles.count) profiles)")
+                return config
+            }
+            if let legacy = try? JSONDecoder().decode(LegacyMappingConfig.self, from: data) {
+                log.info("Migrating legacy config to profile format")
+                var config = AppConfig()
+                config.profiles[0].mappings = legacy.mappings
+                save(config)
+                return config
+            }
+            log.error("Failed to decode config, using defaults")
+            return AppConfig()
         } catch {
             log.error("Failed to load config: \(error.localizedDescription)")
-            return MappingConfig()
+            return AppConfig()
         }
     }
 
-    static func save(_ config: MappingConfig) {
+    static func save(_ config: AppConfig) {
         do {
             try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(config)
             try data.write(to: configFile, options: .atomic)
-            log.info("Config saved to \(configFile.path)")
+            log.info("Config saved (\(config.profiles.count) profiles)")
         } catch {
             log.error("Failed to save config: \(error.localizedDescription)")
         }
     }
+}
+
+private struct LegacyMappingConfig: Codable {
+    var mappings: [String: UInt16]
 }

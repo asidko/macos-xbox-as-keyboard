@@ -7,6 +7,33 @@ import os
 
 private let log = Logger(subsystem: "com.xboxaskeyboard.dpad", category: "main")
 
+// MARK: - Status Bar Icon
+
+enum StatusBarIcon {
+    static func create(dotColor: NSColor, enabled: Bool) -> NSImage {
+        let width: CGFloat = 24
+        let height: CGFloat = 18
+        let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
+            let gamepadColor: NSColor = enabled ? .labelColor : .tertiaryLabelColor
+            gamepadColor.setFill()
+
+            NSBezierPath(roundedRect: NSRect(x: 2, y: 4, width: 16, height: 10), xRadius: 3, yRadius: 3).fill()
+
+            NSColor.windowBackgroundColor.setFill()
+            NSBezierPath(rect: NSRect(x: 6, y: 7, width: 2, height: 6)).fill()
+            NSBezierPath(rect: NSRect(x: 4, y: 9, width: 6, height: 2)).fill()
+
+            let dotSize: CGFloat = 6
+            dotColor.setFill()
+            NSBezierPath(ovalIn: NSRect(x: width - dotSize - 1, y: 1, width: dotSize, height: dotSize)).fill()
+
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+}
+
 // MARK: - App Delegate
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -14,11 +41,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var enabledItem: NSMenuItem!
     private var controllerInfoItem: NSMenuItem!
     private var lastInputItem: NSMenuItem!
+    private var profileMenuItem: NSMenuItem!
     private var isEnabled: Bool = true
     private let eventSource = CGEventSource(stateID: .hidSystemState)
     private var activityToken: NSObjectProtocol?
-    private var config = ConfigStore.load()
+    private var appConfig = ConfigStore.load()
     private var settingsController: SettingsWindowController?
+    private var flashTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         log.info("App launched")
@@ -29,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupControllerNotifications()
         connectExistingControllers()
         checkAccessibilityPermission()
+        updateMenuBarIcon()
     }
 
     // MARK: - App Nap Prevention
@@ -38,7 +68,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             options: [.userInitiated, .idleSystemSleepDisabled],
             reason: "Processing controller input for keyboard mapping"
         )
-        log.info("App Nap disabled")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -60,13 +89,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupMenuBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "🎮"
 
         let menu = NSMenu()
 
         controllerInfoItem = NSMenuItem(title: "No controller connected", action: nil, keyEquivalent: "")
         controllerInfoItem.isEnabled = false
         menu.addItem(controllerInfoItem)
+
+        profileMenuItem = NSMenuItem(title: profileLabel(), action: nil, keyEquivalent: "")
+        profileMenuItem.isEnabled = false
+        menu.addItem(profileMenuItem)
 
         lastInputItem = NSMenuItem(title: "Last input: —", action: nil, keyEquivalent: "")
         lastInputItem.isEnabled = false
@@ -92,10 +124,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
+    private func updateMenuBarIcon() {
+        let color = appConfig.activeProfile.color.nsColor
+        statusItem.button?.image = StatusBarIcon.create(dotColor: color, enabled: isEnabled)
+        statusItem.button?.title = ""
+        profileMenuItem.title = profileLabel()
+    }
+
+    private func profileLabel() -> String {
+        return "\(appConfig.activeProfile.color.emoji) Profile \(appConfig.safeIndex + 1) of \(appConfig.profiles.count)"
+    }
+
     @objc private func toggleEnabled() {
         isEnabled.toggle()
         enabledItem.state = isEnabled ? .on : .off
-        statusItem.button?.title = isEnabled ? "🎮" : "🎮✗"
+        updateMenuBarIcon()
         log.info("Mapping \(self.isEnabled ? "enabled" : "disabled")")
     }
 
@@ -105,16 +148,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let controller = SettingsWindowController(config: config)
+        let controller = SettingsWindowController(appConfig: appConfig)
         controller.onSave = { [weak self] newConfig in
             guard let self else { return }
-            self.config = newConfig
+            self.appConfig = newConfig
             ConfigStore.save(newConfig)
-            // Rebind all connected controllers with new mappings
+            self.updateMenuBarIcon()
             for gc in GCController.controllers() {
                 self.bindController(gc)
             }
-            log.info("Config updated and controllers rebound")
+            log.info("Config saved and controllers rebound")
         }
         settingsController = controller
         controller.showWindow(nil)
@@ -125,6 +168,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.terminate(nil)
     }
 
+    // MARK: - Profile Cycling
+
+    private func cycleProfile() {
+        appConfig.cycleProfile()
+        ConfigStore.save(appConfig)
+        log.info("Switched to profile \(self.appConfig.safeIndex + 1)")
+
+        DispatchQueue.main.async {
+            self.updateMenuBarIcon()
+            // Flash: briefly show profile name in menu bar
+            self.statusItem.button?.title = " Profile \(self.appConfig.safeIndex + 1)"
+            self.flashTimer?.invalidate()
+            self.flashTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { [weak self] _ in
+                self?.statusItem.button?.title = ""
+            }
+        }
+    }
+
     // MARK: - Controller
 
     private func setupControllerNotifications() {
@@ -133,7 +194,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         GCController.startWirelessControllerDiscovery {
             log.info("Wireless controller discovery completed")
         }
-        log.info("Listening for controllers (backgroundEvents=true)")
     }
 
     private func connectExistingControllers() {
@@ -142,29 +202,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for controller in controllers {
             bindController(controller)
         }
-        updateStatus()
+        updateControllerStatus()
     }
 
     @objc private func controllerConnected(_ notification: Notification) {
         guard let controller = notification.object as? GCController else { return }
         log.info("Controller connected: \(controller.vendorName ?? "Unknown")")
         bindController(controller)
-        updateStatus()
+        updateControllerStatus()
     }
 
     @objc private func controllerDisconnected(_ notification: Notification) {
         if let controller = notification.object as? GCController {
             log.info("Controller disconnected: \(controller.vendorName ?? "Unknown")")
         }
-        updateStatus()
+        updateControllerStatus()
     }
 
-    private func updateStatus() {
+    private func updateControllerStatus() {
         let controllers = GCController.controllers()
         if let first = controllers.first {
             let name = first.vendorName ?? "Controller"
-            let hasGamepad = first.extendedGamepad != nil
-            controllerInfoItem.title = "\(name) — \(hasGamepad ? "Ready" : "No gamepad profile")"
+            controllerInfoItem.title = "\(name) — Ready"
         } else {
             controllerInfoItem.title = "No controller connected"
         }
@@ -177,48 +236,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         log.info("Binding buttons for: \(controller.vendorName ?? "Unknown")")
 
-        // D-pad
-        gamepad.dpad.up.pressedChangedHandler = { [weak self] _, _, pressed in
-            self?.handleButton(.dpadUp, pressed: pressed)
-        }
-        gamepad.dpad.down.pressedChangedHandler = { [weak self] _, _, pressed in
-            self?.handleButton(.dpadDown, pressed: pressed)
-        }
-        gamepad.dpad.left.pressedChangedHandler = { [weak self] _, _, pressed in
-            self?.handleButton(.dpadLeft, pressed: pressed)
-        }
-        gamepad.dpad.right.pressedChangedHandler = { [weak self] _, _, pressed in
-            self?.handleButton(.dpadRight, pressed: pressed)
+        // Bind profile switch button
+        switchInput(for: appConfig.switchButton, on: gamepad)?.pressedChangedHandler = { [weak self] _, _, pressed in
+            guard pressed else { return }
+            self?.cycleProfile()
         }
 
-        // Face buttons
-        gamepad.buttonA.pressedChangedHandler = { [weak self] _, _, pressed in
-            self?.handleButton(.a, pressed: pressed)
+        // Map controller buttons to keyboard keys
+        let buttonMap: [(GCControllerButtonInput, ControllerButton)] = [
+            (gamepad.dpad.up, .dpadUp), (gamepad.dpad.down, .dpadDown),
+            (gamepad.dpad.left, .dpadLeft), (gamepad.dpad.right, .dpadRight),
+            (gamepad.buttonA, .a), (gamepad.buttonB, .b),
+            (gamepad.buttonX, .x), (gamepad.buttonY, .y),
+            (gamepad.leftShoulder, .leftBumper), (gamepad.rightShoulder, .rightBumper),
+            (gamepad.leftTrigger, .leftTrigger), (gamepad.rightTrigger, .rightTrigger),
+        ]
+        for (input, button) in buttonMap {
+            input.pressedChangedHandler = { [weak self] _, _, pressed in
+                self?.handleButton(button, pressed: pressed)
+            }
         }
-        gamepad.buttonB.pressedChangedHandler = { [weak self] _, _, pressed in
-            self?.handleButton(.b, pressed: pressed)
-        }
-        gamepad.buttonX.pressedChangedHandler = { [weak self] _, _, pressed in
-            self?.handleButton(.x, pressed: pressed)
-        }
-        gamepad.buttonY.pressedChangedHandler = { [weak self] _, _, pressed in
-            self?.handleButton(.y, pressed: pressed)
-        }
+    }
 
-        // Bumpers
-        gamepad.leftShoulder.pressedChangedHandler = { [weak self] _, _, pressed in
-            self?.handleButton(.leftBumper, pressed: pressed)
-        }
-        gamepad.rightShoulder.pressedChangedHandler = { [weak self] _, _, pressed in
-            self?.handleButton(.rightBumper, pressed: pressed)
-        }
-
-        // Triggers
-        gamepad.leftTrigger.pressedChangedHandler = { [weak self] _, _, pressed in
-            self?.handleButton(.leftTrigger, pressed: pressed)
-        }
-        gamepad.rightTrigger.pressedChangedHandler = { [weak self] _, _, pressed in
-            self?.handleButton(.rightTrigger, pressed: pressed)
+    private func switchInput(for button: SwitchButton, on gamepad: GCExtendedGamepad) -> GCControllerButtonInput? {
+        switch button {
+        case .menu_: return gamepad.buttonMenu
+        case .view_: return gamepad.buttonOptions
+        case .home: return gamepad.buttonHome
         }
     }
 
@@ -229,7 +273,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async {
             self.lastInputItem.title = "Last input: \(button.rawValue) \(pressed ? "↓" : "↑")"
         }
-        guard isEnabled, let keyCode = config.keyCode(for: button) else { return }
+        guard isEnabled, let keyCode = appConfig.activeProfile.keyCode(for: button) else { return }
         postKeyEvent(keyCode: keyCode, keyDown: pressed)
     }
 
