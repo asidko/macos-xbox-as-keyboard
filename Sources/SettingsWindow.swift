@@ -224,19 +224,18 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
 
         for button in ControllerButton.allCases.reversed() {
             let action = profileIdx.flatMap { appConfig.profiles[$0].action(for: button) }
-            let isMacro: Bool
-            if case .macro = action { isMacro = true } else { isMacro = false }
 
-            // Label
-            let label = NSTextField(labelWithString: button.rawValue)
-            label.frame = NSRect(x: 4, y: y + 3, width: 55, height: 18)
-            label.alignment = .right
-            label.font = NSFont.systemFont(ofSize: 12)
-            view.addSubview(label)
-
-            if isMacro, case .macro(let steps) = action {
-                y = buildMacroRow(in: view, at: y, profileId: profileId, button: button, steps: steps, width: width)
+            if case .macro(let steps) = action {
+                // Macro: steps first (bottom), then label+controls on top
+                y = buildMacroSteps(in: view, at: y, profileId: profileId, button: button, steps: steps, width: width)
+                y = buildMacroControls(in: view, at: y, profileId: profileId, button: button, steps: steps, width: width)
             } else {
+                // Single key: label + controls on same line
+                let label = NSTextField(labelWithString: button.rawValue)
+                label.frame = NSRect(x: 4, y: y + 3, width: 55, height: 18)
+                label.alignment = .right
+                label.font = NSFont.systemFont(ofSize: 12)
+                view.addSubview(label)
                 y = buildSingleKeyRow(in: view, at: y, profileId: profileId, button: button, action: action, width: width)
             }
         }
@@ -328,11 +327,30 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
 
     // MARK: - Macro Row
 
-    private func buildMacroRow(in view: NSView, at startY: CGFloat, profileId: UUID, button: ControllerButton, steps: [MacroStep], width: CGFloat) -> CGFloat {
+    /// Render macro steps at bottom (low y), returns y after last step
+    private func buildMacroSteps(in view: NSView, at startY: CGFloat, profileId: UUID, button: ControllerButton, steps: [MacroStep], width: CGFloat) -> CGFloat {
+        let indent: CGFloat = 65
         var y = startY
+
+        // Steps in forward order — step 0 gets lowest y (bottom), reads correctly top-to-bottom
+        for (stepIdx, step) in steps.enumerated().reversed() {
+            y = buildStepRow(in: view, at: y, indent: indent, profileId: profileId, button: button, stepIndex: stepIdx, step: step, width: width)
+        }
+        return y
+    }
+
+    /// Render macro label + controls at top (high y)
+    private func buildMacroControls(in view: NSView, at y: CGFloat, profileId: UUID, button: ControllerButton, steps: [MacroStep], width: CGFloat) -> CGFloat {
         let indent: CGFloat = 65
 
-        // Controls row: [K] [+ Step] (no steps)
+        // Label
+        let label = NSTextField(labelWithString: button.rawValue)
+        label.frame = NSRect(x: 4, y: y + 3, width: 55, height: 18)
+        label.alignment = .right
+        label.font = NSFont.systemFont(ofSize: 12)
+        view.addSubview(label)
+
+        // [K] button
         let keyBtn = NSButton(title: "K", target: nil, action: nil)
         keyBtn.bezelStyle = .rounded
         keyBtn.toolTip = "Switch to Key mode"
@@ -349,6 +367,7 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
         keyBtn.action = #selector(ActionHandler.toggleMacro)
         objc_setAssociatedObject(keyBtn, "handler", keyToggle, .OBJC_ASSOCIATION_RETAIN)
 
+        // [+ Step] button
         let addBtn = NSButton(title: "+ Step", target: nil, action: nil)
         addBtn.bezelStyle = .rounded
         addBtn.frame = NSRect(x: indent + 32, y: y, width: 60, height: 24)
@@ -357,9 +376,9 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
         let addHandler = ActionHandler(profileId: profileId, button: button, controller: self)
         addHandler.onAddStep = { [weak self] in
             guard let self, let idx = self.profileIndex(for: profileId) else { return }
-            if case .macro(var steps) = self.appConfig.profiles[idx].action(for: button) {
-                steps.append(.keyCombo(0, modifiers: []))
-                self.appConfig.profiles[idx].setAction(.macro(steps), for: button)
+            if case .macro(var existingSteps) = self.appConfig.profiles[idx].action(for: button) {
+                existingSteps.append(.keyCombo(nil, modifiers: []))
+                self.appConfig.profiles[idx].setAction(.macro(existingSteps), for: button)
                 self.rebuildCurrentTab()
             }
         }
@@ -368,22 +387,14 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
         objc_setAssociatedObject(addBtn, "handler", addHandler, .OBJC_ASSOCIATION_RETAIN)
 
         if steps.isEmpty {
-            let empty = NSTextField(labelWithString: "(no steps — click + Step)")
-            empty.frame = NSRect(x: indent + 98, y: y + 3, width: 200, height: 18)
+            let empty = NSTextField(labelWithString: "(no steps)")
+            empty.frame = NSRect(x: indent + 98, y: y + 3, width: 100, height: 18)
             empty.font = NSFont.systemFont(ofSize: 11)
             empty.textColor = .secondaryLabelColor
             view.addSubview(empty)
         }
-        y += 28
 
-        // Step rows — reversed so step 1 appears at top visually (AppKit y is bottom-up)
-        for (stepIdx, step) in steps.enumerated().reversed() {
-            y = buildStepRow(in: view, at: y, indent: indent, profileId: profileId, button: button, stepIndex: stepIdx, step: step, width: width)
-        }
-
-        // Bottom separator for this macro block
-        y += 4
-        return y
+        return y + 30
     }
 
     private func buildStepRow(in view: NSView, at y: CGFloat, indent: CGFloat, profileId: UUID, button: ControllerButton, stepIndex: Int, step: MacroStep, width: CGFloat) -> CGFloat {
@@ -410,7 +421,7 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
             guard let self, let idx = self.profileIndex(for: profileId),
                   case .macro(var steps) = self.appConfig.profiles[idx].action(for: button),
                   stepIndex < steps.count else { return }
-            steps[stepIndex] = newType == 0 ? .keyCombo(0, modifiers: []) : .typeText("")
+            steps[stepIndex] = newType == 0 ? .keyCombo(nil, modifiers: []) : .typeText("")
             self.appConfig.profiles[idx].setAction(.macro(steps), for: button)
             self.rebuildCurrentTab()
         }
@@ -422,7 +433,7 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
         if step.type == .keyCombo {
             // Key record button
             let captureBtn = KeyCaptureButton(frame: NSRect(x: x, y: y, width: 70, height: 22))
-            captureBtn.keyCode = step.keyCode == 0 ? nil : step.keyCode
+            captureBtn.keyCode = step.keyCode
             captureBtn.updateTitle()
             captureBtn.font = NSFont.systemFont(ofSize: 11)
             view.addSubview(captureBtn)
@@ -624,7 +635,7 @@ private final class StepHandler: NSObject, NSTextFieldDelegate {
               case .macro(var steps) = controller.appConfig.profiles[idx].action(for: button),
               stepIndex < steps.count else { return }
         var mods = steps[stepIndex].modifiers
-        if sender.state == .on { mods.append(mod) } else { mods.removeAll { $0 == mod } }
+        if sender.state == .on { if !mods.contains(mod) { mods.append(mod) } } else { mods.removeAll { $0 == mod } }
         steps[stepIndex] = .keyCombo(steps[stepIndex].keyCode ?? 0, modifiers: mods)
         controller.appConfig.profiles[idx].setAction(.macro(steps), for: button)
     }

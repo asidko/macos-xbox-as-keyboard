@@ -235,7 +235,7 @@ struct MacroStep: Codable, Equatable {
     var modifiers: [String]
     var text: String?
 
-    static func keyCombo(_ keyCode: UInt16, modifiers: [String] = []) -> MacroStep {
+    static func keyCombo(_ keyCode: UInt16?, modifiers: [String] = []) -> MacroStep {
         MacroStep(type: .keyCombo, keyCode: keyCode, modifiers: modifiers, text: nil)
     }
 
@@ -358,7 +358,7 @@ struct AppConfig: Codable {
     var switchButton: SwitchButton
 
     var activeProfile: Profile {
-        precondition(!profiles.isEmpty, "AppConfig must have at least one profile")
+        if profiles.isEmpty { return Profile(colorIndex: 0) }
         return profiles[safeIndex]
     }
 

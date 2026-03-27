@@ -7,6 +7,64 @@ import os
 
 private let log = Logger(subsystem: "com.xboxaskeyboard.dpad", category: "main")
 
+// MARK: - App Icon
+
+enum AppIcon {
+    static func create() -> NSImage {
+        let size: CGFloat = 256
+        return NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            // Background: rounded green pill (inspired by ShanWan controller)
+            let bg = NSBezierPath(roundedRect: rect.insetBy(dx: 8, dy: 40), xRadius: 50, yRadius: 50)
+            NSColor(red: 0.65, green: 0.78, blue: 0.55, alpha: 1.0).setFill()
+            bg.fill()
+
+            // Subtle border
+            NSColor(red: 0.55, green: 0.68, blue: 0.45, alpha: 1.0).setStroke()
+            bg.lineWidth = 3
+            bg.stroke()
+
+            // D-pad cross (left side)
+            let dpadX: CGFloat = 60
+            let dpadY: CGFloat = size / 2
+            let armW: CGFloat = 16
+            let armL: CGFloat = 28
+            NSColor.white.setFill()
+            // Vertical arm
+            NSBezierPath(roundedRect: NSRect(x: dpadX - armW/2, y: dpadY - armL, width: armW, height: armL * 2), xRadius: 3, yRadius: 3).fill()
+            // Horizontal arm
+            NSBezierPath(roundedRect: NSRect(x: dpadX - armL, y: dpadY - armW/2, width: armL * 2, height: armW), xRadius: 3, yRadius: 3).fill()
+
+            // Face buttons (right side) — 4 circles in diamond pattern
+            let btnR: CGFloat = 12
+            let cx: CGFloat = 196
+            let cy: CGFloat = size / 2
+            let spread: CGFloat = 22
+
+            NSColor.white.setFill()
+            // Y (top)
+            NSBezierPath(ovalIn: NSRect(x: cx - btnR, y: cy + spread - btnR, width: btnR * 2, height: btnR * 2)).fill()
+            // A (bottom)
+            NSBezierPath(ovalIn: NSRect(x: cx - btnR, y: cy - spread - btnR, width: btnR * 2, height: btnR * 2)).fill()
+            // X (left)
+            NSBezierPath(ovalIn: NSRect(x: cx - spread - btnR, y: cy - btnR, width: btnR * 2, height: btnR * 2)).fill()
+            // B (right)
+            NSBezierPath(ovalIn: NSRect(x: cx + spread - btnR, y: cy - btnR, width: btnR * 2, height: btnR * 2)).fill()
+
+            // Button labels
+            let labelAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.boldSystemFont(ofSize: 11),
+                .foregroundColor: NSColor(red: 0.55, green: 0.68, blue: 0.45, alpha: 1.0),
+            ]
+            "Y".draw(at: NSPoint(x: cx - 4, y: cy + spread - 8), withAttributes: labelAttrs)
+            "A".draw(at: NSPoint(x: cx - 4, y: cy - spread - 8), withAttributes: labelAttrs)
+            "X".draw(at: NSPoint(x: cx - spread - 4, y: cy - 8), withAttributes: labelAttrs)
+            "B".draw(at: NSPoint(x: cx + spread - 4, y: cy - 8), withAttributes: labelAttrs)
+
+            return true
+        }
+    }
+}
+
 // MARK: - Status Bar Icon
 
 enum StatusBarIcon {
@@ -52,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         log.info("App launched")
+        NSApp.applicationIconImage = AppIcon.create()
         if eventSource == nil { log.warning("CGEventSource is nil — key simulation will fail") }
         disableAppNap()
         GCController.shouldMonitorBackgroundEvents = true
