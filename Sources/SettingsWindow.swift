@@ -85,7 +85,7 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
     init(appConfig: AppConfig) {
         self.appConfig = appConfig
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 540, height: 680),
+            contentRect: NSRect(x: 0, y: 0, width: 570, height: 680),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -104,7 +104,7 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
     private func buildUI() {
         guard let window else { return }
 
-        let width: CGFloat = 540
+        let width: CGFloat = 570
         let totalHeight: CGFloat = 680
         let contentView = NSView(frame: NSRect(x: 0, y: 0, width: width, height: totalHeight))
         var y: CGFloat = 16
@@ -179,7 +179,23 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
     private func ensureTabBuilt(_ item: NSTabViewItem) {
         guard let profileId = item.identifier as? UUID, !builtTabs.contains(profileId) else { return }
         builtTabs.insert(profileId)
-        item.view = buildMappingView(for: profileId)
+
+        let contentView = buildMappingView(for: profileId)
+
+        // Wrap in scroll view
+        let scrollView = NSScrollView()
+        scrollView.documentView = contentView
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.scrollerStyle = .overlay
+        scrollView.drawsBackground = false
+
+        // Scroll to top (highest y in flipped=false coordinates)
+        if let docView = scrollView.documentView {
+            docView.scroll(NSPoint(x: 0, y: docView.bounds.height))
+        }
+
+        item.view = scrollView
     }
 
     func tabView(_ tabView: NSTabView, willSelect tabViewItem: NSTabViewItem?) {
@@ -189,7 +205,7 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
     // MARK: - Mapping View
 
     private func buildMappingView(for profileId: UUID) -> NSView {
-        let width: CGFloat = 500
+        let width: CGFloat = 530
         let view = NSView()
         var y: CGFloat = 8
 
@@ -505,8 +521,7 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
     private func rebuildCurrentTab() {
         guard let item = tabView.selectedTabViewItem, let id = item.identifier as? UUID else { return }
         builtTabs.remove(id)
-        item.view = buildMappingView(for: id)
-        builtTabs.insert(id)
+        ensureTabBuilt(item)
     }
 
     // MARK: - Actions
