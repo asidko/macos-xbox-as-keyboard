@@ -157,6 +157,16 @@ let keySections: [KeySection] = [
         KeyEntry(name: "/ Slash", keyCode: UInt16(kVK_ANSI_Slash)),
         KeyEntry(name: "` Grave", keyCode: UInt16(kVK_ANSI_Grave)),
     ]),
+    KeySection(title: "Modifiers", keys: [
+        KeyEntry(name: "⌘ Command", keyCode: UInt16(kVK_Command)),
+        KeyEntry(name: "⇧ Shift", keyCode: UInt16(kVK_Shift)),
+        KeyEntry(name: "⌥ Option", keyCode: UInt16(kVK_Option)),
+        KeyEntry(name: "⌃ Control", keyCode: UInt16(kVK_Control)),
+        KeyEntry(name: "⌘ Right Command", keyCode: UInt16(kVK_RightCommand)),
+        KeyEntry(name: "⇧ Right Shift", keyCode: UInt16(kVK_RightShift)),
+        KeyEntry(name: "⌥ Right Option", keyCode: UInt16(kVK_RightOption)),
+        KeyEntry(name: "⌃ Right Control", keyCode: UInt16(kVK_RightControl)),
+    ]),
 ]
 let allKeys: [KeyEntry] = keySections.flatMap(\.keys)
 
@@ -190,6 +200,25 @@ enum KeyCodeNames {
         if fnKeys.contains(keyCode) { flags.insert(.maskSecondaryFn) }
         if numPadKeys.contains(keyCode) { flags.insert(.maskNumericPad) }
         return flags
+    }
+
+    private static let modifierFlags: [UInt16: CGEventFlags] = [
+        UInt16(kVK_Command): .maskCommand,
+        UInt16(kVK_RightCommand): .maskCommand,
+        UInt16(kVK_Shift): .maskShift,
+        UInt16(kVK_RightShift): .maskShift,
+        UInt16(kVK_Option): .maskAlternate,
+        UInt16(kVK_RightOption): .maskAlternate,
+        UInt16(kVK_Control): .maskControl,
+        UInt16(kVK_RightControl): .maskControl,
+    ]
+
+    static func isModifier(_ keyCode: UInt16) -> Bool {
+        modifierFlags[keyCode] != nil
+    }
+
+    static func modifierFlag(for keyCode: UInt16) -> CGEventFlags? {
+        modifierFlags[keyCode]
     }
 }
 

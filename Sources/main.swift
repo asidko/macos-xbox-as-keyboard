@@ -48,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var appConfig = ConfigStore.load()
     private var settingsController: SettingsWindowController?
     private var flashTimer: Timer?
+    private var activeModifiers: CGEventFlags = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         log.info("App launched")
@@ -278,11 +279,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func postKeyEvent(keyCode: UInt16, keyDown: Bool) {
+        if KeyCodeNames.isModifier(keyCode) {
+            postModifierEvent(keyCode: keyCode, keyDown: keyDown)
+        } else {
+            postRegularKeyEvent(keyCode: keyCode, keyDown: keyDown)
+        }
+    }
+
+    private func postRegularKeyEvent(keyCode: UInt16, keyDown: Bool) {
         guard let event = CGEvent(keyboardEventSource: eventSource, virtualKey: CGKeyCode(keyCode), keyDown: keyDown) else {
             log.error("Failed to create CGEvent — check Accessibility permissions")
             return
         }
-        event.flags = KeyCodeNames.eventFlags(for: keyCode)
+        event.flags = KeyCodeNames.eventFlags(for: keyCode).union(activeModifiers)
+        event.post(tap: .cghidEventTap)
+    }
+
+    private func postModifierEvent(keyCode: UInt16, keyDown: Bool) {
+        guard let flag = KeyCodeNames.modifierFlag(for: keyCode),
+              let event = CGEvent(keyboardEventSource: eventSource, virtualKey: CGKeyCode(keyCode), keyDown: keyDown) else {
+            return
+        }
+        if keyDown {
+            activeModifiers.insert(flag)
+        } else {
+            activeModifiers.remove(flag)
+        }
+        event.type = .flagsChanged
+        event.flags = activeModifiers
         event.post(tap: .cghidEventTap)
     }
 }
