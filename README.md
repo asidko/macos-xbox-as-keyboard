@@ -1,30 +1,35 @@
 # Xbox As Keyboard
 
-Minimal macOS menu bar app that remaps Xbox controller D-pad to keyboard arrow keys.
+Free, lightweight macOS menu bar app that maps your game controller buttons to keyboard keys.
 
-## Build & Run
+![Screenshot](screenshot.jpeg)
 
-```bash
-make run
-```
+## Features
+
+- Map any controller button to any keyboard key (record or select from dropdown)
+- Modifier keys (Cmd, Shift, Opt, Ctrl) that combine with other mapped keys
+- Macros — chain key combos and text typing into a single button press
+- Multiple profiles with color-coded menu bar indicator and instant switching
+- Works with Xbox, PlayStation, and any MFi-compatible gamepad
+- Lightweight — runs as a menu bar icon, no dock clutter
+- Config saved to `~/.config/xboxaskeyboard/config.json`
 
 ## Install
+
+Download the latest `.zip` from [Releases](../../releases), unzip, drag to Applications.
+
+Or build from source:
 
 ```bash
 make install
 ```
 
-Installs to `/Applications/XboxAsKeyboard.app`.
+Requires macOS 13+ and Accessibility permission (prompted on first launch).
 
-## Usage
+## Default mappings
 
-- 🎮 icon appears in the menu bar
-- Click to toggle on/off or quit
-- D-pad up/down/left/right maps to keyboard arrow keys
-- Requires Accessibility permission (System Settings > Privacy & Security > Accessibility)
+D-pad = Arrow keys, A/B/X/Y = A/B/X/Y keys, LB/RB = Page Up/Down, LT/RT = Home/End, Menu = Switch profile
 
-## Requirements
+## License
 
-- macOS 13+
-- Swift 5.9+
-- Xbox controller (or any MFi/GCController-compatible gamepad)
+[MIT](LICENSE)

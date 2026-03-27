@@ -1,0 +1,27 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: make build
+
+      - name: Package
+        run: |
+          cd .build/release
+          zip -r XboxAsKeyboard.zip XboxAsKeyboard.app
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: .build/release/XboxAsKeyboard.zip
+          generate_release_notes: true
