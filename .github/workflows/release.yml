@@ -26,9 +26,10 @@ jobs:
         run: |
           make generate-build-info
           swift build -c release --arch arm64 --arch x86_64
-          mkdir -p .build/release/XboxAsKeyboard.app/Contents/MacOS
+          mkdir -p .build/release/XboxAsKeyboard.app/Contents/MacOS .build/release/XboxAsKeyboard.app/Contents/Resources
           cp .build/apple/Products/Release/XboxAsKeyboard .build/release/XboxAsKeyboard.app/Contents/MacOS/
           cp Info.plist .build/release/XboxAsKeyboard.app/Contents/
+          cp Resources/AppIcon.icns .build/release/XboxAsKeyboard.app/Contents/Resources/
           codesign --force --sign "XboxAsKeyboard Dev" .build/release/XboxAsKeyboard.app
 
       - name: Create DMG

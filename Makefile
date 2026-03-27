@@ -21,24 +21,28 @@ build: setup-cert generate-build-info
 	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"
 	cp $(BUILD_DIR)/$(APP_NAME) "$(APP_BUNDLE)/Contents/MacOS/"
 	cp Info.plist "$(APP_BUNDLE)/Contents/"
+	mkdir -p "$(APP_BUNDLE)/Contents/Resources"
+	cp Resources/AppIcon.icns "$(APP_BUNDLE)/Contents/Resources/"
 	codesign --force --sign "$(CERT_NAME)" "$(APP_BUNDLE)"
 	@echo "Signed with $(CERT_NAME)"
 
 # CI/release: universal binary (ARM + Intel in one app)
 build-universal: generate-build-info
 	swift build -c release --arch arm64 --arch x86_64
-	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"
+	mkdir -p "$(APP_BUNDLE)/Contents/MacOS" "$(APP_BUNDLE)/Contents/Resources"
 	cp .build/apple/Products/Release/$(APP_NAME) "$(APP_BUNDLE)/Contents/MacOS/"
 	cp Info.plist "$(APP_BUNDLE)/Contents/"
+	cp Resources/AppIcon.icns "$(APP_BUNDLE)/Contents/Resources/"
 	codesign --force --sign - "$(APP_BUNDLE)"
 	@echo "Universal binary built (arm64 + x86_64)"
 
 # CI/release: current arch only
 build-release: generate-build-info
 	swift build -c release
-	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"
+	mkdir -p "$(APP_BUNDLE)/Contents/MacOS" "$(APP_BUNDLE)/Contents/Resources"
 	cp $(BUILD_DIR)/$(APP_NAME) "$(APP_BUNDLE)/Contents/MacOS/"
 	cp Info.plist "$(APP_BUNDLE)/Contents/"
+	cp Resources/AppIcon.icns "$(APP_BUNDLE)/Contents/Resources/"
 	codesign --force --sign - "$(APP_BUNDLE)"
 
 run: build
