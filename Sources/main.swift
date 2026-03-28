@@ -108,6 +108,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var flashTimer: Timer?
     private var activeModifiers: CGEventFlags = []
 
+    // Mouse state
+    private var movingDirections: Set<MoveDirection> = []
+    private var cursorTimer: Timer?
+    private var cursorTicksHeld: Int = 0
+    private var isDragging: Bool = false
+    private var scrollingDirections: Set<ScrollDirection> = []
+    private var scrollTimer: Timer?
+    private var scrollTicksHeld: Int = 0
+    private var slowScrollHeld: Bool = false
+    private var fastScrollHeld: Bool = false
+
+    // Cursor acceleration constants
+    private let cursorBaseSpeed: Double = 3.0
+    private let cursorAccelRate: Double = 0.3
+    private let cursorMaxSpeed: Double = 20.0
+    private let cursorTickInterval: TimeInterval = 1.0 / 60.0 // ~16ms
+
+    // Scroll constants
+    private let scrollTickInterval: TimeInterval = 1.0 / 20.0 // ~50ms, calmer than cursor
+    private let scrollBaseSpeed: Int32 = 2
+    private let scrollMaxSpeed: Int32 = 10
+    private let scrollAccelRate: Double = 0.1
+    private let scrollSlowMultiplier: Double = 0.3
+    private let scrollFastMultiplier: Double = 3.0
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         log.info("App launched")
         NSApp.applicationIconImage = AppIcon.create()
@@ -246,6 +271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Profile Cycling
 
     private func cycleProfile() {
+        resetAllInputState()
         appConfig.cycleProfile()
         ConfigStore.save(appConfig)
         log.info("Switched to profile \(self.appConfig.safeIndex + 1)")
@@ -344,17 +370,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Key Simulation
 
     private func handleButton(_ button: ControllerButton, pressed: Bool) {
-        log.debug("\(button.rawValue) \(pressed ? "pressed" : "released")")
-        DispatchQueue.main.async {
-            self.lastInputItem.title = "Last input: \(button.rawValue) \(pressed ? "↓" : "↑")"
-        }
-        guard isEnabled, let action = appConfig.activeProfile.action(for: button) else { return }
-        switch action {
-        case .singleKey(let keyCode):
-            postKeyEvent(keyCode: keyCode, keyDown: pressed)
-        case .macro(let steps):
-            guard pressed else { return }
-            executeMacro(steps)
+        DispatchQueue.main.async { [self] in
+            log.debug("\(button.rawValue) \(pressed ? "pressed" : "released")")
+            lastInputItem.title = "Last input: \(button.rawValue) \(pressed ? "↓" : "↑")"
+            guard isEnabled, let action = appConfig.activeProfile.action(for: button) else { return }
+            switch action {
+            case .singleKey(let keyCode):
+                postKeyEvent(keyCode: keyCode, keyDown: pressed)
+            case .macro(let steps):
+                guard pressed else { return }
+                executeMacro(steps)
+            case .mouseClick(let btn):
+                handleMouseClick(btn, pressed: pressed)
+            case .mouseMove(let dir):
+                handleMouseMove(dir, pressed: pressed)
+            case .scroll(let dir):
+                handleScroll(dir, pressed: pressed)
+            case .scrollModifier(let mod):
+                handleScrollModifier(mod, pressed: pressed)
+            }
         }
     }
 
@@ -433,6 +467,168 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         event.flags = KeyCodeNames.eventFlags(for: keyCode).union(activeModifiers)
         event.post(tap: .cghidEventTap)
+    }
+
+    // MARK: - Mouse: Cursor Movement
+
+    private func handleMouseMove(_ direction: MoveDirection, pressed: Bool) {
+        if pressed {
+            movingDirections.insert(direction)
+            startCursorTimerIfNeeded()
+        } else {
+            movingDirections.remove(direction)
+            if movingDirections.isEmpty {
+                stopCursorTimer()
+            }
+        }
+    }
+
+    private func startCursorTimerIfNeeded() {
+        guard cursorTimer == nil else { return }
+        cursorTicksHeld = 0
+        cursorTimer = Timer.scheduledTimer(withTimeInterval: cursorTickInterval, repeats: true) { [weak self] _ in
+            self?.cursorTick()
+        }
+    }
+
+    private func stopCursorTimer() {
+        cursorTimer?.invalidate()
+        cursorTimer = nil
+        cursorTicksHeld = 0
+    }
+
+    private func cursorTick() {
+        guard !movingDirections.isEmpty else { return }
+        cursorTicksHeld += 1
+
+        let multiplier = appConfig.activeProfile.mouseSettings.cursorSpeed
+        let speed = min(cursorBaseSpeed + Double(cursorTicksHeld) * cursorAccelRate, cursorMaxSpeed) * multiplier
+
+        var dx: Double = 0
+        var dy: Double = 0
+        if movingDirections.contains(.left) { dx -= speed }
+        if movingDirections.contains(.right) { dx += speed }
+        if movingDirections.contains(.up) { dy -= speed }
+        if movingDirections.contains(.down) { dy += speed }
+
+        // Get current position and compute new position
+        guard let currentEvent = CGEvent(source: nil) else { return }
+        let current = currentEvent.location
+        var newX = current.x + dx
+        var newY = current.y + dy
+
+        // Clamp to union of all screen bounds (multi-monitor safe)
+        let fullFrame = NSScreen.screens.reduce(CGRect.null) { $0.union($1.frame) }
+        if fullFrame != .null {
+            newX = max(fullFrame.minX, min(newX, fullFrame.maxX - 1))
+            newY = max(fullFrame.minY, min(newY, fullFrame.maxY - 1))
+        }
+
+        let newPos = CGPoint(x: newX, y: newY)
+        let eventType: CGEventType = isDragging ? .leftMouseDragged : .mouseMoved
+        guard let moveEvent = CGEvent(mouseEventSource: eventSource, mouseType: eventType, mouseCursorPosition: newPos, mouseButton: .left) else { return }
+        moveEvent.post(tap: .cghidEventTap)
+    }
+
+    // MARK: - Mouse: Clicks
+
+    private func handleMouseClick(_ button: MouseButton, pressed: Bool) {
+        guard let currentEvent = CGEvent(source: nil) else { return }
+        let pos = currentEvent.location
+
+        switch button {
+        case .left:
+            let eventType: CGEventType = pressed ? .leftMouseDown : .leftMouseUp
+            guard let event = CGEvent(mouseEventSource: eventSource, mouseType: eventType, mouseCursorPosition: pos, mouseButton: .left) else { return }
+            event.post(tap: .cghidEventTap)
+            isDragging = pressed
+
+        case .right:
+            let eventType: CGEventType = pressed ? .rightMouseDown : .rightMouseUp
+            guard let event = CGEvent(mouseEventSource: eventSource, mouseType: eventType, mouseCursorPosition: pos, mouseButton: .right) else { return }
+            event.post(tap: .cghidEventTap)
+
+        case .back:
+            let eventType: CGEventType = pressed ? .otherMouseDown : .otherMouseUp
+            guard let event = CGEvent(mouseEventSource: eventSource, mouseType: eventType, mouseCursorPosition: pos, mouseButton: .center) else { return }
+            event.setIntegerValueField(.mouseEventButtonNumber, value: 3)
+            event.post(tap: .cghidEventTap)
+
+        case .forward:
+            let eventType: CGEventType = pressed ? .otherMouseDown : .otherMouseUp
+            guard let event = CGEvent(mouseEventSource: eventSource, mouseType: eventType, mouseCursorPosition: pos, mouseButton: .center) else { return }
+            event.setIntegerValueField(.mouseEventButtonNumber, value: 4)
+            event.post(tap: .cghidEventTap)
+        }
+    }
+
+    // MARK: - Mouse: Scrolling
+
+    private func handleScroll(_ direction: ScrollDirection, pressed: Bool) {
+        if pressed {
+            scrollingDirections.insert(direction)
+            startScrollTimerIfNeeded()
+        } else {
+            scrollingDirections.remove(direction)
+            if scrollingDirections.isEmpty {
+                stopScrollTimer()
+            }
+        }
+    }
+
+    private func startScrollTimerIfNeeded() {
+        guard scrollTimer == nil else { return }
+        scrollTicksHeld = 0
+        scrollTimer = Timer.scheduledTimer(withTimeInterval: scrollTickInterval, repeats: true) { [weak self] _ in
+            self?.scrollTick()
+        }
+    }
+
+    private func stopScrollTimer() {
+        scrollTimer?.invalidate()
+        scrollTimer = nil
+        scrollTicksHeld = 0
+    }
+
+    private func scrollTick() {
+        guard !scrollingDirections.isEmpty else { return }
+        scrollTicksHeld += 1
+
+        // Acceleration: ramp up scroll speed over time
+        let accelSpeed = min(Double(scrollBaseSpeed) + Double(scrollTicksHeld) * scrollAccelRate, Double(scrollMaxSpeed))
+        let multiplier = appConfig.activeProfile.mouseSettings.scrollSpeed
+            * (slowScrollHeld ? scrollSlowMultiplier : 1.0)
+            * (fastScrollHeld ? scrollFastMultiplier : 1.0)
+        let delta = Int32(accelSpeed * multiplier)
+
+        var scrollY: Int32 = 0
+        if scrollingDirections.contains(.up) { scrollY += delta }
+        if scrollingDirections.contains(.down) { scrollY -= delta }
+
+        guard let event = CGEvent(scrollWheelEvent2Source: eventSource, units: .line, wheelCount: 1, wheel1: scrollY, wheel2: 0, wheel3: 0) else { return }
+        event.post(tap: .cghidEventTap)
+    }
+
+    // MARK: - Mouse: Scroll Speed Modifiers
+
+    private func handleScrollModifier(_ modifier: ScrollSpeedModifier, pressed: Bool) {
+        switch modifier {
+        case .slow: slowScrollHeld = pressed
+        case .fast: fastScrollHeld = pressed
+        }
+    }
+
+    // MARK: - Mouse: State Reset
+
+    private func resetAllInputState() {
+        stopCursorTimer()
+        stopScrollTimer()
+        movingDirections.removeAll()
+        scrollingDirections.removeAll()
+        isDragging = false
+        slowScrollHeld = false
+        fastScrollHeld = false
+        activeModifiers = []
     }
 
     private func postModifierEvent(keyCode: UInt16, keyDown: Bool) {

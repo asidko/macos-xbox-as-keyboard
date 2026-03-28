@@ -222,6 +222,61 @@ enum KeyCodeNames {
     }
 }
 
+// MARK: - Mouse Types
+
+enum MouseButton: String, CaseIterable, Codable {
+    case left, right, back, forward
+
+    var displayName: String {
+        switch self {
+        case .left: return "Left Click"
+        case .right: return "Right Click"
+        case .back: return "Back"
+        case .forward: return "Forward"
+        }
+    }
+}
+
+enum MoveDirection: String, CaseIterable, Codable {
+    case up, down, left, right
+
+    var displayName: String {
+        switch self {
+        case .up: return "Move Up"
+        case .down: return "Move Down"
+        case .left: return "Move Left"
+        case .right: return "Move Right"
+        }
+    }
+}
+
+enum ScrollDirection: String, CaseIterable, Codable {
+    case up, down
+
+    var displayName: String {
+        switch self {
+        case .up: return "Scroll Up"
+        case .down: return "Scroll Down"
+        }
+    }
+}
+
+enum ScrollSpeedModifier: String, CaseIterable, Codable {
+    case slow, fast
+
+    var displayName: String {
+        switch self {
+        case .slow: return "Scroll Speed: Slow"
+        case .fast: return "Scroll Speed: Fast"
+        }
+    }
+}
+
+struct MouseSettings: Codable, Equatable {
+    var cursorSpeed: Double = 1.0
+    var scrollSpeed: Double = 1.0
+}
+
 // MARK: - Macro Types
 
 struct MacroStep: Codable, Equatable {
@@ -262,10 +317,25 @@ struct MacroStep: Codable, Equatable {
 enum ButtonAction: Codable, Equatable {
     case singleKey(UInt16)
     case macro([MacroStep])
+    case mouseClick(MouseButton)
+    case mouseMove(MoveDirection)
+    case scroll(ScrollDirection)
+    case scrollModifier(ScrollSpeedModifier)
+
+    var displayName: String {
+        switch self {
+        case .singleKey(let kc): return KeyCodeNames.name(for: kc)
+        case .macro(let steps): return "Macro (\(steps.count) steps)"
+        case .mouseClick(let btn): return btn.displayName
+        case .mouseMove(let dir): return dir.displayName
+        case .scroll(let dir): return dir.displayName
+        case .scrollModifier(let mod): return mod.displayName
+        }
+    }
 
     // Custom coding to handle backward compat with plain UInt16
     enum CodingKeys: String, CodingKey {
-        case singleKey, macro
+        case singleKey, macro, mouseClick, mouseMove, scroll, scrollModifier
     }
 
     init(from decoder: Decoder) throws {
@@ -280,6 +350,14 @@ enum ButtonAction: Codable, Equatable {
             self = .singleKey(keyCode)
         } else if let steps = try container.decodeIfPresent([MacroStep].self, forKey: .macro) {
             self = .macro(steps)
+        } else if let btn = try container.decodeIfPresent(MouseButton.self, forKey: .mouseClick) {
+            self = .mouseClick(btn)
+        } else if let dir = try container.decodeIfPresent(MoveDirection.self, forKey: .mouseMove) {
+            self = .mouseMove(dir)
+        } else if let dir = try container.decodeIfPresent(ScrollDirection.self, forKey: .scroll) {
+            self = .scroll(dir)
+        } else if let mod = try container.decodeIfPresent(ScrollSpeedModifier.self, forKey: .scrollModifier) {
+            self = .scrollModifier(mod)
         } else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown ButtonAction"))
         }
@@ -292,6 +370,14 @@ enum ButtonAction: Codable, Equatable {
             try container.encode(keyCode, forKey: .singleKey)
         case .macro(let steps):
             try container.encode(steps, forKey: .macro)
+        case .mouseClick(let btn):
+            try container.encode(btn, forKey: .mouseClick)
+        case .mouseMove(let dir):
+            try container.encode(dir, forKey: .mouseMove)
+        case .scroll(let dir):
+            try container.encode(dir, forKey: .scroll)
+        case .scrollModifier(let mod):
+            try container.encode(mod, forKey: .scrollModifier)
         }
     }
 }
@@ -302,31 +388,57 @@ struct Profile: Codable, Identifiable {
     var id: UUID
     var colorIndex: Int
     var mappings: [String: ButtonAction]
+    var mouseSettings: MouseSettings
 
     var color: ProfileColor { ProfileColor.forIndex(colorIndex) }
 
-    static let defaultMappings: [ControllerButton: UInt16] = [
-        .dpadUp: UInt16(kVK_UpArrow),
-        .dpadDown: UInt16(kVK_DownArrow),
-        .dpadLeft: UInt16(kVK_LeftArrow),
-        .dpadRight: UInt16(kVK_RightArrow),
-        .a: UInt16(kVK_ANSI_A),
-        .b: UInt16(kVK_ANSI_B),
-        .x: UInt16(kVK_ANSI_X),
-        .y: UInt16(kVK_ANSI_Y),
-        .leftBumper: UInt16(kVK_PageUp),
-        .rightBumper: UInt16(kVK_PageDown),
-        .leftTrigger: UInt16(kVK_Home),
-        .rightTrigger: UInt16(kVK_End),
+    static let defaultKeyboardMappings: [ControllerButton: ButtonAction] = [
+        .dpadUp: .singleKey(UInt16(kVK_UpArrow)),
+        .dpadDown: .singleKey(UInt16(kVK_DownArrow)),
+        .dpadLeft: .singleKey(UInt16(kVK_LeftArrow)),
+        .dpadRight: .singleKey(UInt16(kVK_RightArrow)),
+        .a: .singleKey(UInt16(kVK_ANSI_A)),
+        .b: .singleKey(UInt16(kVK_ANSI_B)),
+        .x: .singleKey(UInt16(kVK_ANSI_X)),
+        .y: .singleKey(UInt16(kVK_ANSI_Y)),
+        .leftBumper: .singleKey(UInt16(kVK_PageUp)),
+        .rightBumper: .singleKey(UInt16(kVK_PageDown)),
+        .leftTrigger: .singleKey(UInt16(kVK_Home)),
+        .rightTrigger: .singleKey(UInt16(kVK_End)),
     ]
 
-    init(colorIndex: Int) {
+    static let defaultMouseMappings: [ControllerButton: ButtonAction] = [
+        .dpadUp: .mouseMove(.up),
+        .dpadDown: .mouseMove(.down),
+        .dpadLeft: .mouseMove(.left),
+        .dpadRight: .mouseMove(.right),
+        .b: .mouseClick(.left),
+        .x: .mouseClick(.right),
+        .a: .scroll(.down),
+        .y: .scroll(.up),
+        .leftBumper: .mouseClick(.back),
+        .rightBumper: .mouseClick(.forward),
+        .leftTrigger: .scrollModifier(.slow),
+        .rightTrigger: .scrollModifier(.fast),
+    ]
+
+    init(colorIndex: Int, mouse: Bool = false) {
         self.id = UUID()
         self.colorIndex = colorIndex
+        self.mouseSettings = MouseSettings()
         self.mappings = [:]
-        for (button, keyCode) in Self.defaultMappings {
-            mappings[button.rawValue] = .singleKey(keyCode)
+        let defaults = mouse ? Self.defaultMouseMappings : Self.defaultKeyboardMappings
+        for (button, action) in defaults {
+            mappings[button.rawValue] = action
         }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        colorIndex = try container.decode(Int.self, forKey: .colorIndex)
+        mappings = try container.decode([String: ButtonAction].self, forKey: .mappings)
+        mouseSettings = try container.decodeIfPresent(MouseSettings.self, forKey: .mouseSettings) ?? MouseSettings()
     }
 
     func action(for button: ControllerButton) -> ButtonAction? {
@@ -368,7 +480,10 @@ struct AppConfig: Codable {
     }
 
     init() {
-        profiles = [Profile(colorIndex: 0)]
+        profiles = [
+            Profile(colorIndex: 0),
+            Profile(colorIndex: 1, mouse: true),
+        ]
         activeProfileIndex = 0
         switchButton = .menu_
     }
