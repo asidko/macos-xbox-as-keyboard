@@ -628,7 +628,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         isDragging = false
         slowScrollHeld = false
         fastScrollHeld = false
-        activeModifiers = []
+
+        // Release any held modifier keys to prevent stuck modifiers
+        if !activeModifiers.isEmpty {
+            for key in allKeys where KeyCodeNames.isModifier(key.keyCode) {
+                if let flag = KeyCodeNames.modifierFlag(for: key.keyCode), activeModifiers.contains(flag) {
+                    postModifierEvent(keyCode: key.keyCode, keyDown: false)
+                }
+            }
+            activeModifiers = []
+        }
     }
 
     private func postModifierEvent(keyCode: UInt16, keyDown: Bool) {

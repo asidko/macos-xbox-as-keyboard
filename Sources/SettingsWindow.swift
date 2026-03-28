@@ -5,6 +5,7 @@ import Carbon.HIToolbox
 
 final class KeyCaptureButton: NSButton {
     var keyCode: UInt16?
+    var currentAction: ButtonAction?
     var onCapture: ((UInt16) -> Void)?
     private var isCapturing = false
     private var localMonitor: Any?
@@ -28,7 +29,7 @@ final class KeyCaptureButton: NSButton {
     }
 
     func updateTitle() {
-        title = keyCode.map { KeyCodeNames.name(for: $0) } ?? "Not Set"
+        title = currentAction?.displayName ?? keyCode.map { KeyCodeNames.name(for: $0) } ?? "Not Set"
     }
 
     @objc private func startCapture() {
@@ -38,6 +39,7 @@ final class KeyCaptureButton: NSButton {
             guard let self, self.isCapturing else { return event }
             self.stopCapture()
             self.keyCode = event.keyCode
+            self.currentAction = nil
             self.updateTitle()
             self.onCapture?(event.keyCode)
             return nil
@@ -55,6 +57,13 @@ final class KeyCaptureButton: NSButton {
     deinit { stopCapture() }
 }
 
+// MARK: - Button Action Wrapper (for dropdown representedObject)
+
+private final class ButtonActionWrapper: NSObject {
+    let action: ButtonAction
+    init(_ action: ButtonAction) { self.action = action }
+}
+
 // MARK: - Settings Window Controller
 
 final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
@@ -64,9 +73,30 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
     private var switchPopup: NSPopUpButton!
     private var builtTabs: Set<UUID> = []
 
-    private lazy var sharedKeyMenu: NSMenu = {
+    private lazy var sharedActionMenu: NSMenu = {
         let menu = NSMenu()
-        menu.addItem(withTitle: "— Select key —", action: nil, keyEquivalent: "")
+        menu.addItem(withTitle: "— Select action —", action: nil, keyEquivalent: "")
+
+        // Mouse actions
+        menu.addItem(.separator())
+        let mouseHeader = NSMenuItem(title: "Mouse Actions", action: nil, keyEquivalent: "")
+        mouseHeader.isEnabled = false
+        mouseHeader.attributedTitle = NSAttributedString(string: "Mouse Actions", attributes: [.font: NSFont.boldSystemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])
+        menu.addItem(mouseHeader)
+
+        let mouseActions: [ButtonAction] = [
+            .mouseClick(.left), .mouseClick(.right), .mouseClick(.back), .mouseClick(.forward),
+            .mouseMove(.up), .mouseMove(.down), .mouseMove(.left), .mouseMove(.right),
+            .scroll(.up), .scroll(.down),
+            .scrollModifier(.slow), .scrollModifier(.fast),
+        ]
+        for action in mouseActions {
+            let item = NSMenuItem(title: action.displayName, action: nil, keyEquivalent: "")
+            item.representedObject = ButtonActionWrapper(action)
+            menu.addItem(item)
+        }
+
+        // Keyboard keys
         for section in keySections {
             menu.addItem(.separator())
             let header = NSMenuItem(title: section.title, action: nil, keyEquivalent: "")
@@ -75,7 +105,7 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
             menu.addItem(header)
             for key in section.keys {
                 let item = NSMenuItem(title: key.name, action: nil, keyEquivalent: "")
-                item.representedObject = key.keyCode as NSNumber
+                item.representedObject = ButtonActionWrapper(.singleKey(key.keyCode))
                 menu.addItem(item)
             }
         }
@@ -108,6 +138,10 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
         let totalHeight: CGFloat = 680
         let contentView = NSView(frame: NSRect(x: 0, y: 0, width: width, height: totalHeight))
         var y: CGFloat = 16
+
+        let resetBtn = NSButton(title: "Reset to Defaults", target: self, action: #selector(resetToDefaults))
+        resetBtn.frame = NSRect(x: 20, y: y, width: 150, height: 32)
+        contentView.addSubview(resetBtn)
 
         let saveBtn = NSButton(title: "Save", target: self, action: #selector(saveConfig))
         saveBtn.frame = NSRect(x: width - 100, y: y, width: 80, height: 32)
@@ -155,10 +189,10 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
         view.addSubview(sep)
     }
 
-    private func selectDropdownItem(_ dropdown: NSPopUpButton, for keyCode: UInt16) {
+    private func selectDropdownItem(_ dropdown: NSPopUpButton, for action: ButtonAction) {
         guard let menu = dropdown.menu else { return }
         for (i, item) in menu.items.enumerated() {
-            if (item.representedObject as? NSNumber)?.uint16Value == keyCode {
+            if let wrapper = item.representedObject as? ButtonActionWrapper, wrapper.action == action {
                 dropdown.selectItem(at: i)
                 return
             }
@@ -258,7 +292,7 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
 
         // Hint
         y += 4
-        let hint = NSTextField(labelWithString: "Record key or select from dropdown. [M] = macro mode, [K] = key mode.")
+        let hint = NSTextField(labelWithString: "Record key or select from dropdown (keys + mouse). [M] = macro, [K] = key mode.")
         hint.frame = NSRect(x: 10, y: y, width: width - 20, height: 16)
         hint.font = NSFont.systemFont(ofSize: 11)
         hint.textColor = .secondaryLabelColor
@@ -272,19 +306,18 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
     // MARK: - Single Key Row
 
     private func buildSingleKeyRow(in view: NSView, at y: CGFloat, profileId: UUID, button: ControllerButton, action: ButtonAction?, width: CGFloat) -> CGFloat {
-        let keyCode: UInt16? = {
-            if case .singleKey(let kc) = action { return kc }
-            return nil
-        }()
-
         let captureBtn = KeyCaptureButton(frame: NSRect(x: 65, y: y, width: 80, height: 26))
-        captureBtn.keyCode = keyCode
+        if case .singleKey(let kc) = action {
+            captureBtn.keyCode = kc
+        } else if let action {
+            captureBtn.currentAction = action
+        }
         captureBtn.updateTitle()
         view.addSubview(captureBtn)
 
         let dropdown = NSPopUpButton(frame: NSRect(x: 150, y: y, width: 190, height: 26), pullsDown: false)
-        dropdown.menu = sharedKeyMenu.copy() as? NSMenu
-        if let kc = keyCode { selectDropdownItem(dropdown, for: kc) }
+        dropdown.menu = sharedActionMenu.copy() as? NSMenu
+        if let action { selectDropdownItem(dropdown, for: action) }
         view.addSubview(dropdown)
 
         let clearBtn = NSButton(title: "✕", target: nil, action: nil)
@@ -302,14 +335,21 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
         // Wire up capture → dropdown sync + config
         captureBtn.onCapture = { [weak self, weak dropdown] keyCode in
             guard let self, let idx = self.profileIndex(for: profileId) else { return }
-            self.appConfig.profiles[idx].setAction(.singleKey(keyCode), for: button)
-            if let dropdown { self.selectDropdownItem(dropdown, for: keyCode) }
+            let action = ButtonAction.singleKey(keyCode)
+            self.appConfig.profiles[idx].setAction(action, for: button)
+            if let dropdown { self.selectDropdownItem(dropdown, for: action) }
         }
 
         // Wire up dropdown → capture sync + config
         let dropHandler = ActionHandler(profileId: profileId, button: button, controller: self)
-        dropHandler.onDropdown = { [weak captureBtn] keyCode in
-            captureBtn?.keyCode = keyCode
+        dropHandler.onDropdown = { [weak captureBtn] action in
+            if case .singleKey(let kc) = action {
+                captureBtn?.keyCode = kc
+                captureBtn?.currentAction = nil
+            } else {
+                captureBtn?.keyCode = nil
+                captureBtn?.currentAction = action
+            }
             captureBtn?.updateTitle()
         }
         dropdown.target = dropHandler
@@ -320,6 +360,7 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
         let clearHandler = ActionHandler(profileId: profileId, button: button, controller: self)
         clearHandler.onClear = { [weak captureBtn, weak dropdown] in
             captureBtn?.keyCode = nil
+            captureBtn?.currentAction = nil
             captureBtn?.updateTitle()
             dropdown?.selectItem(at: 0)
         }
@@ -531,6 +572,23 @@ final class SettingsWindowController: NSWindowController, NSTabViewDelegate {
         window?.close()
     }
 
+    @objc private func resetToDefaults() {
+        let alert = NSAlert()
+        alert.messageText = "Reset all profiles to defaults?"
+        alert.informativeText = "This will replace all profiles with the default keyboard and mouse profiles. This cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        appConfig = AppConfig()
+        switchPopup.selectItem(at: SwitchButton.allCases.firstIndex(of: appConfig.switchButton) ?? 0)
+        rebuildTabs()
+        if appConfig.safeIndex < tabView.numberOfTabViewItems {
+            tabView.selectTabViewItem(at: appConfig.safeIndex)
+        }
+    }
+
     @objc private func switchButtonChanged() {
         appConfig.switchButton = SwitchButton.allCases[switchPopup.indexOfSelectedItem]
     }
@@ -591,7 +649,7 @@ private final class ActionHandler: NSObject {
     let profileId: UUID
     let button: ControllerButton
     weak var controller: SettingsWindowController?
-    var onDropdown: ((UInt16) -> Void)?
+    var onDropdown: ((ButtonAction) -> Void)?
     var onClear: (() -> Void)?
     var onToggleMacro: (() -> Void)?
     var onAddStep: (() -> Void)?
@@ -604,10 +662,10 @@ private final class ActionHandler: NSObject {
 
     @objc func dropdownChanged(_ sender: NSPopUpButton) {
         guard let item = sender.selectedItem,
-              let keyCode = (item.representedObject as? NSNumber)?.uint16Value,
+              let wrapper = item.representedObject as? ButtonActionWrapper,
               let controller, let idx = controller.profileIndex(for: profileId) else { return }
-        controller.appConfig.profiles[idx].setAction(.singleKey(keyCode), for: button)
-        onDropdown?(keyCode)
+        controller.appConfig.profiles[idx].setAction(wrapper.action, for: button)
+        onDropdown?(wrapper.action)
     }
 
     @objc func clear() {
@@ -651,7 +709,7 @@ private final class StepHandler: NSObject, NSTextFieldDelegate {
               stepIndex < steps.count else { return }
         var mods = steps[stepIndex].modifiers
         if sender.state == .on { if !mods.contains(mod) { mods.append(mod) } } else { mods.removeAll { $0 == mod } }
-        steps[stepIndex] = .keyCombo(steps[stepIndex].keyCode ?? 0, modifiers: mods)
+        steps[stepIndex] = .keyCombo(steps[stepIndex].keyCode, modifiers: mods)
         controller.appConfig.profiles[idx].setAction(.macro(steps), for: button)
     }
 
